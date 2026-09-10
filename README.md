@@ -52,15 +52,14 @@ Client (App/Partner)
 Microcervices/
 ├── traefik/              # proxy stateless — static + dynamic config
 ├── auth-service/          # MariaDB + auth-service, 1 compose (schema owner)
-├── services/
-│   ├── service-ruangan/   # contoh paling sederhana — 1 DB, 1 route
-│   ├── service-pegawai/
-│   ├── service-bipot/
-│   ├── service-jadwal/
-│   ├── service-khs/       # generate PDF (puppeteer)
-│   ├── service-tagihan/   # paling berat — 3 DB eksternal
-│   └── service-telegram/  # satu-satunya tanpa database
-└── postman/               # collection Newman end-to-end
+└── services/
+    ├── service-ruangan/   # contoh paling sederhana — 1 DB, 1 route
+    ├── service-pegawai/
+    ├── service-bipot/
+    ├── service-jadwal/
+    ├── service-khs/       # generate PDF (puppeteer)
+    ├── service-tagihan/   # paling berat — 3 DB eksternal
+    └── service-telegram/  # satu-satunya tanpa database
 ```
 
 Setiap folder punya `docker-compose.yml` sendiri — **tidak ada compose file di
@@ -115,12 +114,10 @@ Kelola client (create/rotate secret/ubah scope/suspend) lewat CLI interaktif:
 
 ## Testing
 
-```bash
-npx newman run postman/Microcervices-Gateway.postman_collection.json --insecure
-```
-
-Mencakup auth flow (token, refresh + rotasi, revoke), happy-path ke service bisnis,
-negative test (401/403/400), dan rate-limit per-client.
+Collection Postman/Newman untuk test end-to-end (auth flow, scope enforcement,
+rate limit, negative test) disimpan **lokal saja** (`postman/`, tidak ikut ke
+repo — berisi kredensial demo client). Lihat [`CLAUDE.md`](./CLAUDE.md#postman-collection)
+untuk cara pakainya.
 
 ## Status
 

@@ -5,6 +5,9 @@
 
 node_modules/
 
+# Postman collection — punya kredensial demo client, simpan lokal saja
+postman/
+
 # Logs
 *.log
 npm-debug.log*
