@@ -11,11 +11,15 @@ end-to-end):
 - `traefik/` — static + dynamic config, dijalankan dari **`traefik/docker-compose.yml`**
   (cuma berisi service `traefik`, proxy stateless murni tanpa data — tidak lagi di root,
   root project sekarang tidak punya compose file sendiri).
-- `mariadb` (**MariaDB 11.6**, satu instance dipakai bersama oleh semua service — bukan
-  Postgres lagi, lihat "Kenapa MariaDB" di bawah) + `auth-service/` (Express + `mysql2`)
-  digabung satu compose di **`auth-service/docker-compose.yml`** — auth-service adalah
-  satu-satunya pemilik skema di database ini (`clients`, `scopes`, `refresh_tokens`), jadi
-  lifecycle keduanya digabung daripada nebeng di compose traefik. `auth-service` sendiri:
+- `auth-service/` (Express + `mysql2`), compose sendiri di **`auth-service/docker-compose.yml`**
+  — **tidak lagi bundle container `mariadb` sendiri** (lihat "Database Eksternal (MariaDB
+  Bersama)" di bawah untuk alasan & cara setupnya). Database-nya sekarang instance MariaDB
+  yang sudah ada & dikelola terpisah di VPS (`/opt/mariadb-server/docker-compose.yml`, host
+  "biznet", **bukan** bagian dari project ini — dan ternyata juga server database produksi
+  kampus sesungguhnya, bukan instance kosong), dijangkau lewat IP `10.50.0.1:3306` (WireGuard,
+  bukan nama container). auth-service tetap satu-satunya pemilik skema di database khusus
+  `gateway_auth` di instance itu (`clients`, `scopes`, `refresh_tokens`) — database lain di
+  instance yang sama (SIADE/SIMAKU/PAYMENT/dst.) tidak disentuh. `auth-service` sendiri:
   Client Credentials grant, **refresh token** (opaque, hash SHA-256 tersimpan di DB, rotasi
   tiap dipakai) + `/oauth/revoke`, dan **scope discovery**: auto-fetch manifest `/scopes` dari
   service lain (lihat `auth-service/src/config/services.js`) tiap boot + tiap 60 detik,
@@ -64,13 +68,67 @@ konsisten — ini keputusan sadar, bukan bug):
 2. `service-khs`'s `POST /khs/cetak` — balas buffer PDF mentah (`Content-Type:
    application/pdf`), bukan JSON, jadi envelope tidak relevan di endpoint itu.
 
+### Database Eksternal (MariaDB Bersama) — dipakai `auth-service`
+
+`auth-service` **tidak lagi bundle container `mariadb` sendiri** di compose-nya (sebelumnya
+ada, lihat git history kalau butuh bentuk lamanya). Sekarang connect ke instance MariaDB yang
+sudah ada & dikelola **terpisah dari project ini** — `/opt/mariadb-server/docker-compose.yml`
+di VPS (host "biznet"), dijangkau lewat IP `10.50.0.1:3306` (alamat WireGuard host itu, bukan
+nama container Docker).
+
+**Dikonfirmasi (sesi ini)**: instance ini **BUKAN** database kosong khusus gateway — ini
+server database produksi kampus yang sesungguhnya, sudah berisi (antara lain)
+`sql_siade_umjambi_ac_id` (SIADE), `sql_simaku_umjambi_ac_id` (SIMAKU),
+`sql_payment_umjambi_ac_id` (PAYMENT), `sql_admisi_umjambi_ac_id`,
+`sql_eoffice_umjambi_ac_id`, `sql_simawa_umjambi_ac_id`, `master_api_express_js`, `phpmyadmin`
+— **ini kemungkinan sumber yang sama yang nanti dipakai `DATABASE_URL_SIADE`/`_SIMAKU`/
+`_PAYMENT` di service bisnis** (lihat "Service bisnis baru" di bawah), walau belum diverifikasi
+dipasang eksplisit di `.env` service manapun. Database-database itu **TIDAK disentuh** sama
+sekali oleh setup auth-service — cuma satu database baru ditambahkan khusus untuk gateway:
+`gateway_auth` (tabel `clients`, `scopes`, `refresh_tokens`, sudah di-import & diverifikasi ada
+isinya, lihat di bawah).
+
+**Kredensial yang dipakai**: user `donj08`, `GRANT ALL PRIVILEGES ON *.*` (diverifikasi lewat
+`SHOW GRANTS` — bukan user yang di-scope khusus ke `gateway_auth`, ini kredensial yang
+diberikan untuk dipakai langsung, belum dibuatkan user terpisah least-privilege). **Risiko
+yang perlu diingat**: karena privilege-nya mencakup SEMUA database di instance itu (termasuk
+SIADE/SIMAKU/PAYMENT di atas), kalau auth-service atau `.env`-nya bocor, blast radius-nya
+bukan cuma `gateway_auth` — kalau nanti mau lebih aman, buat user terpisah
+(`CREATE USER 'gateway_auth'@'%' ...; GRANT ALL ON gateway_auth.* TO ...`) dan pindah
+`auth-service/.env` ke situ, tapi ini **belum dikerjakan** (keputusan sadar, bukan lupa — lihat
+histori chat, eksplisit diminta pakai apa adanya & tidak mengubah yang lain dulu).
+
+**Cara kerja**:
+- `auth-service/docker-compose.yml` **tidak perlu** join network Docker khusus apa pun untuk
+  ini — connect langsung ke `DB_HOST` (IP) lewat network default (`gateway-net` + routing host
+  biasa), bukan lewat nama container. Ini cuma jalan kalau host yang menjalankan auth-service
+  sendiri punya akses network ke `10.50.0.1` (mis. punya interface WireGuard yang sama).
+- Schema (`auth-service/db/init.sql`) **tidak auto-run** oleh `docker-entrypoint-initdb.d`
+  (mekanisme itu cuma berlaku untuk container mariadb yang dijalankan dari compose ini sendiri
+  — kita tidak lagi menjalankan itu). Sudah di-import manual sekali (sesi ini) lewat:
+  ```bash
+  docker run --rm mariadb:11.6 mariadb -h 10.50.0.1 -P 3306 -u donj08 -p'<password>' \
+    -e "CREATE DATABASE IF NOT EXISTS gateway_auth CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+  docker run --rm -v "$(pwd)/auth-service/db/init.sql:/init.sql:ro" mariadb:11.6 \
+    sh -c "mariadb -h 10.50.0.1 -P 3306 -u donj08 -p'<password>' gateway_auth < /init.sql"
+  ```
+  Kalau perlu re-import di mesin lain (schema berubah, atau pindah host), jalankan pola yang
+  sama dari mesin mana pun yang punya akses network ke `10.50.0.1:3306` — tidak harus dari VPS
+  itu sendiri.
+- Budget koneksi (`AUTH_DB_POOL_SIZE`) dihitung terhadap `max_connections` instance **bersama**
+  itu (lihat `/opt/mariadb-server/docker-compose.yml` untuk nilai aktualnya) — dan instance ini
+  confirmed dipakai banyak sistem lain (lihat daftar database di atas), jadi jangan asumsikan
+  headroom besar itu bebas dipakai semua oleh gateway. Lihat juga "Kapasitas Database" di
+  bawah.
+
 ### Service bisnis baru — database eksternal, bukan `mariadb` gateway
 
 `service-ruangan`, `service-pegawai`, `service-bipot`, `service-jadwal`, `service-khs`, dan
 `service-tagihan` (semua kecuali `service-telegram`) connect ke database **eksternal** milik
-sistem akademik/keuangan kampus yang sudah ada — **BUKAN** instance `mariadb` yang dipakai
-`auth-service` (itu database kosong khusus punya gateway sendiri, cuma `clients`/`scopes`/
-`refresh_tokens`). Tiap service baca `DATABASE_URL_<NAMA>` env var sendiri-sendiri lewat
+sistem akademik/keuangan kampus yang sudah ada — **BUKAN** database `gateway_auth` yang
+dipakai `auth-service` (itu database khusus punya gateway sendiri, cuma `clients`/`scopes`/
+`refresh_tokens`, lihat "Database Eksternal (MariaDB Bersama)" di atas). Tiap service baca
+`DATABASE_URL_<NAMA>` env var sendiri-sendiri lewat
 helper `src/db/pools.js` — file identik di keenam service itu (parse URL manual, bukan opsi
 `uri` mysql2, supaya `connectionLimit`/`timezone` pasti kepakai; satu pool lazy per nama DB,
 mirip `getPool(name)` di project lama `RESTFULL-API-EXPRESSJS`). Lihat
@@ -364,10 +422,14 @@ benar-benar production-ready di VPS:
 
 ## Kapasitas Database
 
-Setiap database yang dipakai project ini (`mariadb` milik gateway sendiri, maupun database
-eksternal kampus kalau kamu self-host salinannya sendiri di Docker) sekarang bisa di-tuning
-lewat `.env` tanpa rebuild image — semua nilai di bawah sudah ada default aman untuk VPS
-kecil (~1 vCPU/1-2GB RAM khusus database), **sesuaikan begitu tahu spek host asli**.
+Service bisnis (connection pool ke database eksternal kampus) masih bisa di-tuning lewat
+`.env` tanpa rebuild image — semua nilai di bawah sudah ada default aman, **sesuaikan begitu
+tahu spek host asli**. Instance MariaDB yang dipakai `auth-service` (lihat "Database
+Eksternal (MariaDB Bersama)" di atas) **bukan lagi milik/dikelola dari repo ini** — tuning
+`max_connections`/`innodb_buffer_pool_size`/resource limit instance itu dilakukan di
+`/opt/mariadb-server/docker-compose.yml` di VPS, di luar project ini. Dari sisi auth-service,
+yang masih relevan untuk di-tuning cuma `AUTH_DB_POOL_SIZE` (seberapa banyak koneksi yang
+auth-service ambil dari budget bersama instance itu).
 
 ### Model budget koneksi
 
@@ -377,20 +439,24 @@ instance database yang SAMA harus punya headroom di bawah `max_connections` data
 jangan pas-pasan (sisakan untuk koneksi admin/monitoring/replikasi). Kalau tidak, service yang
 paling akhir connect akan gagal start (`ER_CON_COUNT_ERROR`) begitu database penuh.
 
-Contoh perhitungan untuk `mariadb` milik gateway (default sekarang, cuma dipakai
-`auth-service`):
+Contoh perhitungan untuk instance MariaDB bersama di VPS (`max_connections=500`, lihat
+`/opt/mariadb-server/docker-compose.yml` — nilai ini dikelola di luar repo ini, cek langsung
+di sana kalau berubah), cuma dipakai `auth-service` dari project ini saat ini:
 ```
-DB_MAX_CONNECTIONS (mariadb)  = 300
-AUTH_DB_POOL_SIZE              = 20   -> auth-service
---------------------------------------
-Headroom tersisa               = 280  (jauh lebih dari cukup untuk 1 service)
+max_connections (instance bersama) = 500
+AUTH_DB_POOL_SIZE                   = 20   -> auth-service
+-------------------------------------------
+Headroom tersisa                    = 480  (tapi instance ini mungkin punya consumer LAIN
+                                             di luar project ini yang tidak kelihatan dari
+                                             repo ini — mis. proses replikasi — jangan
+                                             asumsikan seluruh headroom itu bebas dipakai)
 ```
-Kalau nanti semua 7 service bisnis JUGA nempel ke instance database yang sama (bukan 4
-database eksternal kampus terpisah seperti disain awal — lihat "Service bisnis baru" di atas),
-hitung ulang:
+Kalau nanti semua 7 service bisnis JUGA nempel ke instance database yang sama (bukan database
+eksternal kampus terpisah seperti disain awal — lihat "Service bisnis baru" di atas), hitung
+ulang:
 ```
-DB_MAX_CONNECTIONS            = 300
-AUTH_DB_POOL_SIZE              = 20
+max_connections                = 500
+AUTH_DB_POOL_SIZE               = 20
 7x service bisnis x DB_POOL_SIZE(10) masing-masing, TAPI service yang connect ke >1 database
   (service-bipot: 2, service-jadwal: 2, service-khs: 2, service-tagihan: 3) buka SATU POOL
   TERPISAH per nama database (lihat src/db/pools.js: getPool(name), lazy per nama) — jadi
@@ -399,21 +465,19 @@ AUTH_DB_POOL_SIZE              = 20
   service-ruangan(1) + service-pegawai(1) + service-bipot(2) + service-jadwal(2) +
   service-khs(2) + service-tagihan(3) = 11 pool x 10 = 110
 --------------------------------------------------------------------------------------
-Total                          = 20 + 110 = 130   -> masih di bawah 300, aman
+Total                           = 20 + 110 = 130   -> masih di bawah 500, aman
 ```
 Kalau tiap service nanti di-scale jadi beberapa replica, kalikan lagi dengan jumlah replica.
-**Jangan naikkan `DB_POOL_SIZE` sembarangan di satu service tanpa hitung ulang total di atas.**
+**Jangan naikkan `DB_POOL_SIZE` sembarangan di satu service tanpa hitung ulang total di atas
+DAN tanpa cek consumer lain di instance bersama itu yang tidak kelihatan dari repo ini.**
 
 ### Variabel yang bisa di-tuning
 
-`auth-service/.env` (`mariadb` + `auth-service`, lihat `auth-service/docker-compose.yml`):
+`auth-service/.env` (lihat `auth-service/docker-compose.yml` — tuning instance database
+sendiri ada di `/opt/mariadb-server/docker-compose.yml`, di luar project ini):
 | Variabel | Default | Fungsi |
 |---|---|---|
-| `DB_MAX_CONNECTIONS` | 300 | `max_connections` mariadb |
-| `DB_BUFFER_POOL_SIZE` | 512M | `innodb_buffer_pool_size` — lever utama untuk throughput baca/tulis (bukan jumlah koneksi), idealnya ~50-70% dari `DB_MEM_LIMIT` |
-| `DB_MEM_LIMIT` / `DB_MEM_RESERVATION` | 1g / 512m | Limit & reservation memory container `mariadb` |
-| `DB_CPUS` | 1.0 | Limit CPU container `mariadb` |
-| `AUTH_DB_POOL_SIZE` | 20 | `connectionLimit` pool `auth-service` ke `mariadb` |
+| `AUTH_DB_POOL_SIZE` | 20 | `connectionLimit` pool `auth-service` ke instance MariaDB bersama |
 | `AUTH_SERVICE_MEM_LIMIT` / `AUTH_SERVICE_CPUS` | 512m / 1.0 | Limit resource container `auth-service` |
 
 Tiap `services/<nama>/.env` (business service):
@@ -462,26 +526,34 @@ muncul, lalu 4.2 membuktikan client lain tidak ikut kena limit. Sudah divalidasi
 
 ## Cara Jalankan & Test
 
-Ada **tiga compose stack terpisah** — jalankan berurutan (network dulu, auth+db, baru
-traefik, baru service):
+Ada **tiga compose stack terpisah** — jalankan berurutan (network dulu, auth, baru
+traefik, baru service). **Prasyarat**: host yang menjalankan `auth-service` harus punya akses
+network ke `10.50.0.1:3306` (instance MariaDB bersama, lihat "Database Eksternal (MariaDB
+Bersama)" di atas — mis. interface WireGuard yang sama dengan VPS "biznet"). Tidak perlu
+network Docker khusus — koneksinya lewat IP, bukan nama container:
 
 ```bash
 # 0. Network bersama — dibuat manual SEKALI, tidak dimiliki compose file mana pun
 docker network create gateway-net
 
-# 1. MariaDB + Auth Service (1 kesatuan, folder auth-service/, project name "gateway")
+# 1. Database gateway_auth + schema sudah di-import sekali ke instance MariaDB bersama
+# (lihat "Database Eksternal (MariaDB Bersama)" di atas) — tidak perlu diulang kecuali
+# pindah ke instance lain atau schema berubah.
+
+# 2. Auth Service (folder auth-service/, project name "gateway")
 cd auth-service
 cp .env.example .env
-# isi JWT_SECRET (openssl rand -hex 32) dan DB_PASSWORD (openssl rand -hex 24)
+# isi JWT_SECRET (openssl rand -hex 32) dan DB_PASSWORD (password user gateway_auth yang
+# dibuat di langkah 1 di atas)
 docker compose up -d --build
-docker compose ps      # pastikan semua "healthy" — container bernama gateway-*
+docker compose ps      # pastikan "healthy" — container bernama gateway-*
 
-# 2. Traefik (folder traefik/, project name "gateway" juga — lihat catatan di bawah)
+# 3. Traefik (folder traefik/, project name "gateway" juga — lihat catatan di bawah)
 cd ../traefik
 docker compose up -d
 docker compose ps
 
-# 3. Tiap service bisnis, compose sendiri, join gateway-net yang sudah dibuat di atas.
+# 4. Tiap service bisnis, compose sendiri, join gateway-net yang sudah dibuat di atas.
 # Pola sama persis untuk ketujuh: ruangan, pegawai, bipot, jadwal, khs, tagihan, telegram —
 # tapi kredensial DATABASE_URL_<NAMA>-nya BEDA (database eksternal kampus, bukan mariadb
 # gateway) — lihat tabel "Service bisnis baru" di atas untuk tahu nama DB per service.
@@ -494,7 +566,7 @@ cd ../service-tagihan   && cp .env.example .env && docker compose up -d --build
 cd ../service-telegram  && cp .env.example .env && docker compose up -d --build   # isi TELEGRAM_BOT_TOKEN dulu
 ```
 
-**Penting**: langkah 3 di atas akan tetap `docker compose up -d` sukses (container start,
+**Penting**: langkah 4 di atas akan tetap `docker compose up -d` sukses (container start,
 "healthy" kalau tidak butuh DB — `service-telegram` — atau "unhealthy"/`degraded` kalau butuh
 DB tapi kredensialnya masih placeholder) — itu **bukan kegagalan port-nya**, cuma karena
 `.env.example` di tiap service masih berisi placeholder `user:password@host`. Isi
@@ -502,11 +574,13 @@ DB tapi kredensialnya masih placeholder) — itu **bukan kegagalan port-nya**, c
 data.
 
 Kenapa dipisah begini: setiap bagian punya `docker-compose.yml` sendiri di folder-nya
-masing-masing — tidak ada compose file di root sama sekali. `mariadb` + `auth-service`
-selalu naik/turun bareng (auth-service satu-satunya pemilik skema-nya) jadi digabung 1
-`docker-compose.yml` di folder `auth-service/`. `traefik` punya compose sendiri di folder
-`traefik/` karena murni proxy stateless, tidak punya data, tidak perlu ikut siklus hidup
-database. Keduanya tetap di-pin `name: gateway` yang sama supaya di Docker Desktop grup-nya
+masing-masing — tidak ada compose file di root sama sekali. `auth-service` punya compose
+sendiri di folder `auth-service/` (dulu digabung dengan container `mariadb` di compose yang
+sama — sekarang tidak lagi, lihat "Database Eksternal (MariaDB Bersama)" di atas; databasenya
+sekarang instance terpisah di luar project ini). `traefik` juga punya compose sendiri di
+folder `traefik/` karena murni proxy stateless, tidak punya data, tidak perlu ikut siklus
+hidup database. Keduanya (`traefik` & `auth-service`) tetap di-pin `name: gateway` yang sama
+supaya di Docker Desktop grup-nya
 kebaca jelas sebagai satu "gateway", bukan dua grup terpisah atau nama folder kebetulan
 ("traefik"/"auth-service"). Konsekuensinya: `docker compose down` dari salah satu folder
 hanya mematikan service yang didefinisikan di file itu, dan compose akan warning "orphan
@@ -764,11 +838,13 @@ Microcervices/                    # root TIDAK punya docker-compose.yml sendiri
 │       ├── middlewares.yml       # semua middleware & chain, reusable
 │       └── routers.yml           # routers + services per microservice
 ├── auth-service/                 # control plane: client, scope, token issuer, refresh/revoke
-│   ├── docker-compose.yml        # mariadb + auth-service, project name "gateway" juga
-│   ├── .env                       # JWT_SECRET, DB_USER/DB_PASSWORD/DB_NAME
+│   ├── docker-compose.yml        # HANYA auth-service, project name "gateway" juga — connect
+│   │                               # ke instance MariaDB bersama eksternal, lihat "Database
+│   │                               # Eksternal (MariaDB Bersama)"
+│   ├── .env                       # JWT_SECRET, DB_HOST/DB_USER/DB_PASSWORD/DB_NAME
 │   ├── manage-client.sh           # CLI admin: create/rotate secret/ubah scope/suspend client
 │   ├── db/
-│   │   └── init.sql               # schema + seed, jalan otomatis first run MariaDB
+│   │   └── init.sql               # schema + seed — jalankan MANUAL sekali, tidak auto-run
 │   ├── scripts/
 │   │   ├── manage-client.js       # npm run manage-client — dipanggil manage-client.sh
 │   │   └── lib/ui.js

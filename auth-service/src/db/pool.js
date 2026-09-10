@@ -17,10 +17,10 @@ const pool = mysql.createPool({
   password: decodeURIComponent(parsed.password),
   database: parsed.pathname.replace(/^\//, ''),
   waitForConnections: true,
-  // Configurable supaya bisa disesuaikan dengan DB_MAX_CONNECTIONS di mariadb (lihat
-  // auth-service/docker-compose.yml) tanpa rebuild image — total connectionLimit semua
-  // service yang nempel ke database yang sama harus punya headroom di bawah
-  // DB_MAX_CONNECTIONS-nya, bukan asal di-set besar di satu sisi saja.
+  // Configurable lewat DB_POOL_SIZE tanpa rebuild image — total connectionLimit semua
+  // service yang nempel ke instance database yang sama harus punya headroom di bawah
+  // max_connections instance itu, bukan asal di-set besar di satu sisi saja (lihat
+  // CLAUDE.md bagian "Kapasitas Database").
   connectionLimit: Number(process.env.DB_POOL_SIZE) || 10,
   // DATETIME di MariaDB disimpan tanpa timezone — paksa koneksi selalu UTC ('Z') supaya
   // konsisten dengan asumsi lama (TIMESTAMPTZ Postgres yang implisit UTC), tidak ikut

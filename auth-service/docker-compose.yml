@@ -1,17 +1,22 @@
-# MariaDB + auth-service digabung satu compose di sini (bukan lagi di root bareng traefik):
-# auth-service adalah satu-satunya pemilik skema di database ini (clients, scopes,
-# refresh_tokens — tabel `orders` di auth-service/db/init.sql cuma numpang, tetap milik
-# service-a), jadi lifecycle keduanya (mariadb naik/turun bareng auth-service) lebih masuk
-# akal digabung satu folder daripada nebeng di compose traefik yang murni proxy stateless
-# dan tidak butuh ikut naik/turun bareng database.
+# auth-service HANYA berisi container auth-service — TIDAK LAGI bundle container mariadb
+# sendiri. Database-nya sekarang instance MariaDB yang sudah ada & dikelola terpisah di VPS
+# (/opt/mariadb-server/docker-compose.yml di host "biznet", bukan bagian dari project ini),
+# yang juga dipakai untuk hal lain (mis. replika sql_siade_umjambi_ac_id/sql_payment_*).
+# auth-service tetap satu-satunya PEMILIK SKEMA di database itu (tabel clients, scopes,
+# refresh_tokens) — lihat auth-service/db/init.sql untuk schema-nya, dan jalankan isinya
+# manual sekali di instance itu (lihat instruksi di CLAUDE.md bagian "Database Eksternal
+# (MariaDB Bersama)") karena init.sql TIDAK LAGI auto-run oleh docker-entrypoint-initdb.d
+# (itu cuma berlaku untuk image mariadb official saat data directory-nya kosong).
 #
-# `name: gateway` disamakan dengan traefik/docker-compose.yml SENGAJA — supaya di Docker
-# Desktop kedua compose project ini tetap kebaca sebagai satu grup "gateway", walau
-# dijalankan dari dua `docker compose up -d` terpisah. Konsekuensinya: `docker compose down`
-# dari salah satu folder cuma mematikan service yang didefinisikan di compose file itu saja,
-# bukan semuanya — matikan dari masing-masing folder kalau mau stop total.
+# Koneksi ke database lewat IP routable (DB_HOST, lihat .env.example — mis. alamat WireGuard
+# host), BUKAN lewat nama container Docker — jadi auth-service TIDAK perlu join network
+# Docker khusus milik compose /opt/mariadb-server, cukup `gateway-net` saja. Ini cuma jalan
+# kalau host Docker yang menjalankan auth-service ini sendiri bisa route ke DB_HOST itu
+# (mis. dia punya interface WireGuard yang sama) — kalau auth-service pindah ke host lain,
+# pastikan host itu juga punya akses network yang sama sebelum connect.
 #
-# Jalankan: cp .env.example .env (isi sekali), lalu docker compose up -d --build
+# Jalankan: cp .env.example .env (isi JWT_SECRET + DB_HOST/DB_USER/DB_PASSWORD/DB_NAME sesuai
+# kredensial yang sudah dibuat di instance mariadb eksternal), lalu docker compose up -d --build
 # (dari folder ini). Jalankan SEBELUM traefik/docker-compose.yml supaya auth-service sudah
 # siap saat traefik mulai forward request — walau traefik sendiri tetap retry per request
 # kalau backend belum up.
@@ -22,93 +27,18 @@ networks:
   gateway-net:
     external: true
 
-volumes:
-  mariadb_data:
-    name: gateway_mariadb_data # dipin supaya nama volume stabil walau project name berubah lagi
-
 services:
-  mariadb:
-    image: mariadb:11.6
-    # Tuning lewat command flag (bukan mount my.cnf terpisah) supaya semua nilai bisa
-    # disesuaikan lewat .env tanpa nambah file config lain. Semua ada default aman untuk
-    # VPS kecil (~1 vCPU/1-2GB RAM khusus database) — SESUAIKAN begitu tahu spek host asli,
-    # lihat rumus & catatan di CLAUDE.md bagian "Kapasitas Database".
-    command:
-      - "--max-connections=${DB_MAX_CONNECTIONS:-300}"
-      - "--innodb-buffer-pool-size=${DB_BUFFER_POOL_SIZE:-512M}"
-      # innodb-buffer-pool-instances >1 baru relevan kalau buffer pool sudah >=1GB (kurang
-      # dari itu overhead pembagiannya lebih besar dari untungnya) — default 1 aman untuk
-      # ukuran buffer pool kecil di atas.
-      - "--innodb-buffer-pool-instances=1"
-      # Default MariaDB (1) = fsync tiap commit, paling aman tapi paling lambat di beban
-      # tinggi. 2 = fsync tiap detik (masih flush ke OS cache tiap commit) — throughput naik
-      # signifikan, risiko cuma kehilangan <=1 detik transaksi kalau OS/container crash
-      # (bukan kalau proses mariadb-nya sendiri yang crash). Data di database ini
-      # (clients/scopes/refresh_tokens) tidak sekritis data finansial, jadi trade-off ini
-      # diambil sengaja — ganti balik ke 1 kalau mau durability penuh dan siap korban
-      # throughput.
-      - "--innodb-flush-log-at-trx-commit=2"
-      - "--innodb-flush-method=O_DIRECT"
-      - "--thread-cache-size=64"
-      - "--table-open-cache=2000"
-      # Reclaim koneksi idle lebih cepat dari default (8 jam) — di beban tinggi, koneksi
-      # yang nyangkut idle ikut makan slot dari max-connections di atas.
-      - "--wait-timeout=180"
-      - "--interactive-timeout=180"
-      - "--max-allowed-packet=64M"
-    environment:
-      # App tidak pernah pakai user root sama sekali (cuma user aplikasi di bawah) —
-      # random root password lebih aman daripada bikin secret lagi yang tidak kepakai.
-      MARIADB_RANDOM_ROOT_PASSWORD: "yes"
-      MARIADB_USER: ${DB_USER}
-      MARIADB_PASSWORD: ${DB_PASSWORD}
-      MARIADB_DATABASE: ${DB_NAME}
-    volumes:
-      - mariadb_data:/var/lib/mysql
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    networks:
-      - gateway-net
-    restart: unless-stopped
-    # Graceful shutdown — kasih waktu MariaDB flush & tutup koneksi aktif dengan bersih
-    # sebelum di-SIGKILL paksa (default cuma 10s, bisa kepotong di tengah query berat).
-    stop_grace_period: 30s
-    # File descriptor default Docker (1024) gampang habis begitu max-connections dinaikkan
-    # (tiap koneksi + tiap file tabel terbuka butuh fd sendiri) — samakan dengan angka yang
-    # biasa dipakai untuk MySQL/MariaDB produksi.
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    # Batasi ukuran log container — tanpa ini, log bisa tumbuh tanpa batas dan mengisi disk
-    # host sampai penuh (yang ujungnya bisa bikin MariaDB gagal nulis/crash juga).
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    mem_limit: ${DB_MEM_LIMIT:-1g}
-    mem_reservation: ${DB_MEM_RESERVATION:-512m}
-    cpus: ${DB_CPUS:-1.0}
-    healthcheck:
-      # mariadb-admin ping butuh kredensial valid (bukan pg_isready yang bisa cek readiness
-      # tanpa auth) — pakai user aplikasi, bukan root, supaya tidak perlu secret root
-      # terpisah. Password ini kebaca lewat `docker inspect` (embed di config healthcheck),
-      # dev-only sesuai postur keamanan project ini yang memang belum production-hardened.
-      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u ${DB_USER} -p${DB_PASSWORD} --silent"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   auth-service:
     build: .
     environment:
       JWT_SECRET: ${JWT_SECRET}
-      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@mariadb:3306/${DB_NAME}
+      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT:-3306}/${DB_NAME}
       PORT: 4000
-      # Budget koneksi: DB_POOL_SIZE di sini + total connectionLimit semua service bisnis
-      # yang nempel ke database yang sama harus di bawah DB_MAX_CONNECTIONS mariadb (lihat
-      # command mariadb di atas) — biarkan headroom, jangan pas-pasan. Lihat CLAUDE.md
-      # bagian "Kapasitas Database" untuk rumusnya.
+      # Budget koneksi: DB_POOL_SIZE di sini + total connectionLimit semua consumer lain yang
+      # nempel ke instance mariadb eksternal yang SAMA harus punya headroom di bawah
+      # max_connections instance itu (default 500, lihat /opt/mariadb-server/docker-compose.yml
+      # di VPS) — biarkan headroom, jangan pas-pasan. Lihat CLAUDE.md bagian "Kapasitas
+      # Database".
       DB_POOL_SIZE: ${AUTH_DB_POOL_SIZE:-20}
     networks:
       - gateway-net
@@ -120,6 +50,3 @@ services:
         max-file: "3"
     mem_limit: ${AUTH_SERVICE_MEM_LIMIT:-512m}
     cpus: ${AUTH_SERVICE_CPUS:-1.0}
-    depends_on:
-      mariadb:
-        condition: service_healthy
