@@ -1,0 +1,17 @@
+{
+  "name": "service-khs",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "ejs": "^6.0.1",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "mysql2": "^3.24.4",
+    "puppeteer": "^25.10.0",
+    "zod": "^4.5.4"
+  }
+}

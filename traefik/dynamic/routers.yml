@@ -1,0 +1,123 @@
+http:
+  routers:
+    # Endpoint publik untuk menerbitkan token (client_credentials).
+    # Tidak lewat auth-scope middleware karena memang belum ada token di titik ini.
+    auth-token:
+      rule: "PathPrefix(`/oauth`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - cloudflare-ips
+        - rate-limit-ip
+        - secure-headers
+      service: auth-service
+
+    # Semua request ke service bisnis wajib lewat gateway-chain (rate-limit, headers,
+    # auth+scope). Tiap router scoped ke prefix-nya sendiri di bawah /api/* — supaya tiap
+    # router eksplisit menangani prefix-nya sendiri, tidak mengandalkan urutan prioritas
+    # implisit Traefik (yang sebenarnya tetap benar otomatis lewat rule-specificity, tapi
+    # eksplisit lebih jelas dibaca).
+    service-ruangan:
+      rule: "PathPrefix(`/api/ruangan`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - gateway-chain
+      service: service-ruangan
+
+    service-pegawai:
+      rule: "PathPrefix(`/api/pegawai`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - gateway-chain
+      service: service-pegawai
+
+    service-bipot:
+      rule: "PathPrefix(`/api/bipot`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - gateway-chain
+      service: service-bipot
+
+    service-jadwal:
+      rule: "PathPrefix(`/api/jadwal`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - gateway-chain
+      service: service-jadwal
+
+    service-khs:
+      rule: "PathPrefix(`/api/khs`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - gateway-chain
+      service: service-khs
+
+    service-tagihan:
+      rule: "PathPrefix(`/api/tagihan`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - gateway-chain
+      service: service-tagihan
+
+    service-telegram:
+      rule: "PathPrefix(`/api/telegram`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - gateway-chain
+      service: service-telegram
+
+  services:
+    auth-service:
+      loadBalancer:
+        servers:
+          - url: "http://auth-service:4000"
+
+    service-ruangan:
+      loadBalancer:
+        servers:
+          - url: "http://service-ruangan:5000"
+
+    service-pegawai:
+      loadBalancer:
+        servers:
+          - url: "http://service-pegawai:5000"
+
+    service-bipot:
+      loadBalancer:
+        servers:
+          - url: "http://service-bipot:5000"
+
+    service-jadwal:
+      loadBalancer:
+        servers:
+          - url: "http://service-jadwal:5000"
+
+    service-khs:
+      loadBalancer:
+        servers:
+          - url: "http://service-khs:5000"
+
+    service-tagihan:
+      loadBalancer:
+        servers:
+          - url: "http://service-tagihan:5000"
+
+    service-telegram:
+      loadBalancer:
+        servers:
+          - url: "http://service-telegram:5000"

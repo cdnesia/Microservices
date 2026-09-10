@@ -1,0 +1,40 @@
+# Compose file milik service-pegawai sendiri — bisa dijalankan/di-deploy terpisah dari
+# gateway (traefik di docker-compose.yml root, mariadb+auth-service di
+# auth-service/docker-compose.yml). Network `gateway-net` harus sudah dibuat manual (nama-nya
+# dipin literal supaya bisa dirujuk di sini).
+#
+# DATABASE_URL_SIADE_OLD menunjuk ke database SIADE lama (eksternal, BUKAN mariadb gateway) —
+# kredensial harus disediakan sendiri, lihat .env.example.
+#
+# Jalankan: docker compose up -d --build   (dari folder ini, SETELAH auth-service jalan)
+
+networks:
+  gateway-net:
+    name: gateway-net
+    external: true
+
+services:
+  service-pegawai:
+    build: .
+    environment:
+      DATABASE_URL_SIADE_OLD: ${DATABASE_URL_SIADE_OLD}
+      PORT: 5000
+      # Budget koneksi: total DB_POOL_SIZE semua service yang nempel ke database yang
+      # sama harus punya headroom di bawah DB_MAX_CONNECTIONS-nya — lihat CLAUDE.md
+      # bagian "Kapasitas Database".
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+    networks:
+      - gateway-net
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: ${SERVICE_MEM_LIMIT:-256m}
+    cpus: ${SERVICE_CPUS:-0.5}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3

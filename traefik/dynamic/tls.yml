@@ -1,0 +1,17 @@
+# Sertifikat untuk entrypoint websecure (443) — dipakai supaya Cloudflare mode "Full (strict)"
+# bisa terhubung ke origin ini lewat HTTPS dengan sertifikat yang mereka percaya.
+#
+# certFile/keyFile di bawah adalah "Origin Certificate" yang di-generate dari dashboard
+# Cloudflare (SSL/TLS -> Origin Server -> Create Certificate), BUKAN sertifikat dari Let's
+# Encrypt/CA publik lain — Cloudflare Origin CA cuma dipercaya oleh Cloudflare sendiri (yang
+# memang satu-satunya pihak yang perlu percaya, karena traffic publik berhenti di Cloudflare,
+# origin ini cuma bicara dengan Cloudflare). Lihat CLAUDE.md bagian "TLS / SSL (Cloudflare)"
+# untuk langkah generate & taruh filenya di traefik/certs/ (folder itu di-gitignore, jangan
+# commit private key).
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/cloudflare-origin.pem
+      keyFile: /etc/traefik/certs/cloudflare-origin.key
+  options:
+    default:
+      minVersion: VersionTLS12

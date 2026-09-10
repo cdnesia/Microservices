@@ -1,0 +1,6 @@
+# Private key & sertifikat Cloudflare Origin CA — jangan pernah commit.
+# Lihat CLAUDE.md bagian "TLS / SSL (Cloudflare)" untuk cara generate ulang kalau folder
+# ini hilang/kosong di clone baru.
+*.pem
+*.key
+*.crt

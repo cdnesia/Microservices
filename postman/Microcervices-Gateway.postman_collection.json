@@ -1,0 +1,623 @@
+{
+  "info": {
+    "name": "Microcervices API Gateway",
+    "description": "Test suite untuk API Gateway Traefik + Auth Service (Client Credentials, refresh token, scope-check) + service-ruangan (dipakai sebagai contoh business service). Jalankan `docker compose up -d --build` di `auth-service/`, lalu di `traefik/`, lalu di `services/service-ruangan` (cukup untuk suite ini; 6 service lain butuh kredensial DATABASE_URL_<NAMA> eksternal, lihat CLAUDE.md), baru jalankan collection ini via Collection Runner (urutan request penting, top-to-bottom) atau Newman (perlu `--insecure` selama Traefik masih pakai sertifikat placeholder self-signed, lihat CLAUDE.md bagian \"TLS / SSL (Cloudflare)\"):\n\n  npx newman run postman/Microcervices-Gateway.postman_collection.json --insecure\n\nGateway ada di https://localhost:8443 (HTTPS, entrypoint websecure — HTTP di 8081 sekarang cuma redirect ke sini). Demo client di-seed dari auth-service/db/init.sql (demo-client/demo-secret = scope penuh, readonly-client/readonly-secret = scope baca/lookup saja). Request 2.1/2.2 dan 4.1/4.2 akan balas 500 (bukan 200) sampai DATABASE_URL_SIADE_OLD di services/service-ruangan/.env diisi kredensial asli — itu bukan kegagalan test, lihat deskripsi tiap request.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://localhost:8443" },
+    { "key": "demo_client_id", "value": "demo-client" },
+    { "key": "demo_client_secret", "value": "demo-secret" },
+    { "key": "readonly_client_id", "value": "readonly-client" },
+    { "key": "readonly_client_secret", "value": "readonly-secret" },
+    { "key": "access_token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "old_refresh_token", "value": "" },
+    { "key": "readonly_access_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth Flow",
+      "item": [
+        {
+          "name": "1.1 Get Token - demo-client (full scope)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Response has access_token', function () { pm.expect(json.access_token).to.be.a('string'); });",
+                  "pm.test('Response has refresh_token', function () { pm.expect(json.refresh_token).to.be.a('string'); });",
+                  "pm.test('Scope includes read and write actions', function () {",
+                  "  pm.expect(json.scope).to.include('ruangan:list');",
+                  "  pm.expect(json.scope).to.include('tagihan:create');",
+                  "});",
+                  "pm.collectionVariables.set('access_token', json.access_token);",
+                  "pm.collectionVariables.set('refresh_token', json.refresh_token);",
+                  "pm.collectionVariables.set('old_refresh_token', json.refresh_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"{{demo_client_id}}\",\n  \"client_secret\": \"{{demo_client_secret}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "Client Credentials grant untuk demo-client (scope penuh). Menyimpan access_token & refresh_token ke collection variable untuk dipakai request berikutnya."
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 Get Token - readonly-client (read-only scope)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Scope tidak termasuk aksi tulis', function () {",
+                  "  pm.expect(json.scope).to.include('ruangan:list');",
+                  "  pm.expect(json.scope).to.not.include('tagihan:create');",
+                  "});",
+                  "pm.collectionVariables.set('readonly_access_token', json.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"{{readonly_client_id}}\",\n  \"client_secret\": \"{{readonly_client_secret}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "Client Credentials grant untuk readonly-client — cuma dapat scope baca/lookup, tidak termasuk yang membuat/mengubah data (mis. tagihan:create)."
+          },
+          "response": []
+        },
+        {
+          "name": "1.3 Refresh Token - rotate access_token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Dapat access_token baru', function () { pm.expect(json.access_token).to.be.a('string'); });",
+                  "pm.test('Dapat refresh_token baru (rotasi)', function () {",
+                  "  pm.expect(json.refresh_token).to.be.a('string');",
+                  "  pm.expect(json.refresh_token).to.not.eql(pm.collectionVariables.get('old_refresh_token'));",
+                  "});",
+                  "pm.collectionVariables.set('access_token', json.access_token);",
+                  "pm.collectionVariables.set('refresh_token', json.refresh_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"refresh_token\",\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "Tukar refresh_token dari 1.1 jadi access_token baru. refresh_token lama otomatis di-revoke (rotasi) — dites di 1.4."
+          },
+          "response": []
+        },
+        {
+          "name": "1.4 Refresh Token - reuse OLD token (should fail, rotated)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 (invalid_grant)', function () { pm.response.to.have.status(400); });",
+                  "pm.test('Error is invalid_grant', function () { pm.expect(pm.response.json().error).to.eql('invalid_grant'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"refresh_token\",\n  \"refresh_token\": \"{{old_refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "refresh_token dari 1.1 sudah dirotasi/di-revoke otomatis waktu dipakai di 1.3, jadi kalau dipakai lagi di sini harus ditolak."
+          },
+          "response": []
+        },
+        {
+          "name": "1.5 Revoke Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('revoked: true', function () { pm.expect(pm.response.json().revoked).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{demo_client_id}}\",\n  \"client_secret\": \"{{demo_client_secret}}\",\n  \"token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/revoke",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "revoke"]
+            },
+            "description": "Revoke manual refresh_token yang aktif (hasil rotasi dari 1.3). Mirip RFC 7009 — perlu autentikasi client."
+          },
+          "response": []
+        },
+        {
+          "name": "1.6 Refresh Token - after revoke (should fail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 (invalid_grant)', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"refresh_token\",\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "refresh_token ini baru saja di-revoke manual di 1.5, jadi harus ditolak juga."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Ruangan Service - Happy Path",
+      "item": [
+        {
+          "name": "2.1 GET Ruangan List - demo-client (authorized)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 200 kalau DATABASE_URL_SIADE_OLD sudah diisi kredensial asli, 500 kalau belum",
+                  "// (query gagal connect) — keduanya membuktikan request LOLOS gateway (auth+scope",
+                  "// oke); yang tidak boleh terjadi cuma 401/403/429 di titik ini.",
+                  "pm.test('Lolos gateway (200 kredensial asli, atau 500 kredensial belum diisi)', function () {",
+                  "  pm.expect([200, 500]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Envelope shape benar', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('success');",
+                  "  pm.expect(json).to.have.property('message');",
+                  "  pm.expect(json).to.have.property('data');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/ruangan/list",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ruangan", "list"]
+            },
+            "description": "access_token yang dipakai di sini berasal dari 1.3 (hasil refresh), scope ruangan:list. service-ruangan butuh DATABASE_URL_SIADE_OLD asli untuk balas 200 dengan data sungguhan — tanpa itu tetap lolos gateway (401/403 tidak muncul) tapi service sendiri balas 500 karena query gagal connect."
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 GET Ruangan List - readonly-client (authorized)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Lolos gateway (200 kredensial asli, atau 500 kredensial belum diisi)', function () {",
+                  "  pm.expect([200, 500]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{readonly_access_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/ruangan/list",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ruangan", "list"]
+            },
+            "description": "readonly-client punya scope ruangan:list, jadi GET tetap boleh."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Negative & Security Tests",
+      "item": [
+        {
+          "name": "3.1 GET Ruangan List - no token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Error is missing_token', function () { pm.expect(pm.response.json().error).to.eql('missing_token'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/ruangan/list",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ruangan", "list"]
+            },
+            "description": "Tanpa header Authorization sama sekali — ditolak di forwardAuth, tidak pernah sampai ke service-ruangan."
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 GET Ruangan List - garbage token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Error is invalid_token', function () { pm.expect(pm.response.json().error).to.eql('invalid_token'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer token.ngasal.doang" }],
+            "url": {
+              "raw": "{{base_url}}/api/ruangan/list",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ruangan", "list"]
+            },
+            "description": "Token acak/bukan JWT valid."
+          },
+          "response": []
+        },
+        {
+          "name": "3.3 POST Tagihan Create - insufficient scope (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Error is insufficient_scope', function () { pm.expect(pm.response.json().error).to.eql('insufficient_scope'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{readonly_access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tagihan/create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tagihan", "create"]
+            },
+            "description": "readonly-client cuma punya scope baca (list/cek), jadi POST tagihan:create harus ditolak 403 di forwardAuth — sebelum sempat divalidasi zod di service-tagihan, jadi body kosong tetap valid untuk test ini."
+          },
+          "response": []
+        },
+        {
+          "name": "3.4 Get Token - wrong secret (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Error is invalid_client', function () { pm.expect(pm.response.json().error).to.eql('invalid_client'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"{{demo_client_id}}\",\n  \"client_secret\": \"secret-yang-salah\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "client_secret salah."
+          },
+          "response": []
+        },
+        {
+          "name": "3.5 Get Token - malformed scope, crash regression (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400, bukan 500/502 (service tidak crash)', function () { pm.response.to.have.status(400); });",
+                  "pm.test('Error is invalid_request', function () { pm.expect(pm.response.json().error).to.eql('invalid_request'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"{{demo_client_id}}\",\n  \"client_secret\": \"{{demo_client_secret}}\",\n  \"scope\": {\"foo\": \"bar\"}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "Regression test: payload scope berupa object dulu pernah bikin auth-service crash total (unhandled exception). Sekarang harus 400 rapi, dan auth-service harus tetap hidup untuk request-request setelah ini."
+          },
+          "response": []
+        },
+        {
+          "name": "3.6 Get Token - unsupported grant_type (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', function () { pm.response.to.have.status(400); });",
+                  "pm.test('Error is unsupported_grant_type', function () { pm.expect(pm.response.json().error).to.eql('unsupported_grant_type'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"client_id\": \"{{demo_client_id}}\",\n  \"client_secret\": \"{{demo_client_secret}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "grant_type selain client_credentials/refresh_token harus ditolak."
+          },
+          "response": []
+        },
+        {
+          "name": "3.7 Get Token - missing fields (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"client_credentials\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "client_id / client_secret tidak dikirim."
+          },
+          "response": []
+        },
+        {
+          "name": "3.8 Get Token - client_id valid tapi tidak dikenal (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Error is invalid_client', function () { pm.expect(pm.response.json().error).to.eql('invalid_client'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"client-yang-tidak-ada\",\n  \"client_secret\": \"apa-saja\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/oauth/token",
+              "host": ["{{base_url}}"],
+              "path": ["oauth", "token"]
+            },
+            "description": "client_id tidak terdaftar di DB."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Rate Limit per-client",
+      "item": [
+        {
+          "name": "4.1 Flood demo-client - self-contained (cukup klik Send)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Request ini sendiri = hit ke-1. Script di bawah menembak 59 request tambahan",
+                  "// secara paralel lewat pm.sendRequest, jadi total ~60 hit dalam waktu singkat —",
+                  "// cukup klik Send SEKALI, tidak perlu setting Collection Runner.",
+                  "function fireOnce() {",
+                  "  return new Promise((resolve) => {",
+                  "    pm.sendRequest({",
+                  "      url: pm.collectionVariables.get('base_url') + '/api/ruangan/list',",
+                  "      method: 'GET',",
+                  "      header: { Authorization: 'Bearer ' + pm.collectionVariables.get('access_token') }",
+                  "    }, (err, res) => resolve(res ? res.code : 0));",
+                  "  });",
+                  "}",
+                  "",
+                  "(async () => {",
+                  "  const results = [pm.response.code];",
+                  "  const extra = await Promise.all(Array.from({ length: 59 }, fireOnce));",
+                  "  results.push(...extra);",
+                  "",
+                  "  const count200 = results.filter((c) => c === 200).length;",
+                  "  const count429 = results.filter((c) => c === 429).length;",
+                  "  // 500 dihitung 'lolos gateway, bukan crash' — bukan 200 murni karena service-ruangan",
+                  "  // butuh DATABASE_URL_SIADE_OLD asli (lihat CLAUDE.md); sebelum kredensial itu diisi,",
+                  "  // request yang TIDAK kena rate limit akan balas 500 (query gagal connect), bukan 200.",
+                  "  // Yang membuktikan rate limiter jalan tetap count429 > 0 di bawah.",
+                  "  const countAllowed = results.filter((c) => c === 200 || c === 500).length;",
+                  "  const countOther = results.filter((c) => c !== 200 && c !== 429 && c !== 500).length;",
+                  "  console.log(`Hasil 60 request paralel -> 200/500 (lolos gateway): ${countAllowed}, 429: ${count429}, lainnya: ${countOther}`);",
+                  "",
+                  "  pm.test('Tidak ada status selain 200/429/500 (service tidak crash)', function () {",
+                  "    pm.expect(countOther).to.eql(0);",
+                  "  });",
+                  "  pm.test('Setidaknya ada satu 429 (rate limit per-client aktif, burst=40)', function () {",
+                  "    pm.expect(count429).to.be.above(0);",
+                  "  });",
+                  "})();"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/ruangan/list",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ruangan", "list"]
+            },
+            "description": "PENTING: jalankan '1. Auth Flow' dulu (minimal request 1.1) supaya {{access_token}} terisi, baru klik Send di sini. Request ini otomatis menembak total ~60 request paralel ke /api/ruangan/list pakai token demo-client (average=20/burst=40) — hasilnya harus campuran 200-atau-500 (lolos gateway) dan 429 (kena limit), tidak pernah error lain/hang."
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 readonly-client TIDAK ikut kena limit (jalankan setelah 4.1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status BUKAN 429 (client lain tidak ikut kena limit demo-client)', function () {",
+                  "  pm.expect(pm.response.code).to.not.eql(429);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{readonly_access_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/ruangan/list",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ruangan", "list"]
+            },
+            "description": "Dijalankan tepat setelah 4.1 membanjiri kuota demo-client sampai 429. readonly-client pakai IP yang sama (localhost) tapi client_id beda — harus TIDAK 429 (boleh 200 kalau DATABASE_URL_SIADE_OLD sudah diisi asli, atau 500 kalau belum — yang penting bukan 429), membuktikan kuota memang per-client, bukan per-IP."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

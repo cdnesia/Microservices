@@ -1,0 +1,50 @@
+# Traefik — proxy stateless murni, tidak punya data, jadi compose-nya sendiri di sini
+# (bukan lagi di root) — konsisten dengan auth-service/docker-compose.yml (mariadb +
+# auth-service) dan services/service-a/docker-compose.yml: tiap bagian punya compose
+# sendiri di folder-nya masing-masing.
+#
+# `name: gateway` disamakan dengan auth-service/docker-compose.yml SENGAJA — supaya di
+# Docker Desktop kedua compose project ini tetap kebaca sebagai satu grup "gateway", walau
+# dijalankan dari dua `docker compose up -d` terpisah. Konsekuensinya: `docker compose down`
+# dari salah satu folder cuma mematikan service yang didefinisikan di compose file itu saja
+# (compose akan warning "orphan containers" untuk service dari compose file "gateway"
+# satunya — bukan error, cukup abaikan, atau matikan dari kedua folder kalau mau stop total).
+#
+# Jalankan: docker compose up -d (dari folder ini) — SETELAH auth-service/docker-compose.yml
+# sudah up, walau traefik sendiri tetap retry per request kalau backend belum siap.
+
+name: gateway
+
+networks:
+  gateway-net:
+    external: true
+
+services:
+  traefik:
+    image: traefik:v3.7
+    command:
+      - "--configFile=/etc/traefik/traefik.yml"
+    ports:
+      # Default di bawah (8081/8443) buat dev di mesin ini (port 80/443 host dipakai Laravel
+      # Herd). Di VPS/server produksi tanpa Herd, isi traefik/.env (copy dari .env.example)
+      # dengan TRAEFIK_HTTP_PORT=80 dan TRAEFIK_HTTPS_PORT=443 — supaya Cloudflare connect ke
+      # origin port default tanpa perlu Origin Rules tambahan. Compose file ini sendiri TIDAK
+      # perlu diubah antar environment.
+      - "${TRAEFIK_HTTP_PORT:-8081}:80"
+      - "${TRAEFIK_HTTPS_PORT:-8443}:443"
+      - "127.0.0.1:${TRAEFIK_DASHBOARD_PORT:-8080}:8080" # dashboard, dev-only — di-bind ke
+                              # loopback saja, TIDAK ke 0.0.0.0, supaya tidak reachable dari
+                              # luar mesin ini sama sekali (termasuk lewat internet, terlepas
+                              # dari IP allowlist di atas). Akses remote lewat SSH tunnel:
+                              # ssh -L 8080:localhost:8080 <host>, lalu buka
+                              # http://localhost:8080/dashboard/ dari mesin lokal.
+    volumes:
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - ./certs:/etc/traefik/certs:ro
+    networks:
+      - gateway-net
+    restart: unless-stopped
+    # Tidak depends_on auth-service atau service-a — keduanya stack terpisah yang bisa
+    # naik/turun sendiri. Traefik akan retry koneksi ke backend per-request kalau backend
+    # belum up.

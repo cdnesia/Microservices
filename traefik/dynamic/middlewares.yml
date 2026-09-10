@@ -1,0 +1,111 @@
+http:
+  middlewares:
+    # Lapis 0: tolak siapa pun yang connect LANGSUNG ke origin ini tanpa lewat Cloudflare
+    # (bypass Cloudflare = bypass WAF/DDoS-protection/cache mereka juga). sourceRange dicek
+    # terhadap IP TCP peer yang sesungguhnya (bukan header, tidak bisa dipalsukan) karena
+    # middleware ini tidak set ipStrategy khusus. 127.0.0.1/::1 sengaja diizinkan supaya
+    # curl/newman langsung ke localhost dari mesin yang sama (dev/testing) tetap jalan — di
+    # Linux native, docker-proxy meneruskan IP loopback apa adanya, jadi dua baris itu cukup.
+    cloudflare-ips:
+      ipAllowList:
+        sourceRange:
+          - "173.245.48.0/20"
+          - "103.21.244.0/22"
+          - "103.22.200.0/22"
+          - "103.31.4.0/22"
+          - "141.101.64.0/18"
+          - "108.162.192.0/18"
+          - "190.93.240.0/20"
+          - "188.114.96.0/20"
+          - "197.234.240.0/22"
+          - "198.41.128.0/17"
+          - "162.158.0.0/15"
+          - "104.16.0.0/13"
+          - "104.24.0.0/14"
+          - "172.64.0.0/13"
+          - "131.0.72.0/22"
+          - "2400:cb00::/32"
+          - "2606:4700::/32"
+          - "2803:f800::/32"
+          - "2405:b500::/32"
+          - "2405:8100::/32"
+          - "2a06:98c0::/29"
+          - "2c0f:f248::/32"
+          - "127.0.0.1/32"
+          - "::1/128"
+          # ┌─ DEV-ONLY — HAPUS BARIS INI SEBELUM DEPLOY KE VPS (lihat checklist di CLAUDE.md
+          # │  bagian "TLS / SSL (Cloudflare)" -> "Checklist pindah ke VPS") ─────────────────
+          # │ Docker Desktop (Mac/Windows) TIDAK meneruskan 127.0.0.1 asli dari host ke
+          # │ container — traffic host->published-port terlihat datang dari gateway VM-nya
+          # │ sendiri (di mesin dev ini: 192.168.65.1). Tanpa baris ini, curl/newman langsung
+          # │ ke localhost:8443 dari Mac ini akan ke-block (403) meski secara logis "dari
+          # │ localhost". Di VPS (Docker Engine native, bukan Docker Desktop) baris ini TIDAK
+          # │ dibutuhkan sama sekali — 127.0.0.1/::1 di atas sudah cukup.
+          - "192.168.65.0/24"
+          # └────────────────────────────────────────────────────────────────────────────────
+
+    # Lapis 1: proteksi kasar per-IP, jalan SEBELUM auth supaya request yang belum
+    # punya identitas (belum lewat forwardAuth) tidak bisa membanjiri auth-service.
+    # Limitnya sengaja longgar — bukan kuota per-tenant, cuma anti-flood dasar.
+    # ipStrategy.depth: 1 = ambil IP client asli dari X-Forwarded-For (posisi terakhir dari
+    # kanan) yang sudah dipercaya lewat forwardedHeaders.trustedIPs di traefik.yml — tanpa ini,
+    # semua visitor lewat Cloudflare akan kebaca satu IP edge yang sama dan saling berbagi kuota.
+    rate-limit-ip:
+      rateLimit:
+        average: 50
+        burst: 100
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    secure-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        frameDeny: true
+        referrerPolicy: "no-referrer"
+        customResponseHeaders:
+          X-Powered-By: ""
+
+    # Memanggil auth-service untuk validasi JWT + scope-check dalam satu hop.
+    # Traefik otomatis mengirim header X-Forwarded-Method / X-Forwarded-Uri
+    # dan meneruskan Authorization header ke auth-service. Response header
+    # X-Client-Id dari auth-service diteruskan ke request berikutnya di chain ini
+    # (dipakai oleh rate-limit-client di bawah) dan ke backend service.
+    auth-scope:
+      forwardAuth:
+        address: "http://auth-service:4000/verify"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - "X-Client-Id"
+          - "X-Auth-Scopes"
+
+    # Lapis 2: kuota per-client sesungguhnya. Jalan SETELAH auth-scope supaya
+    # X-Client-Id sudah tersedia — jadi klien di belakang IP/NAT yang sama tidak
+    # saling menghabiskan kuota, dan satu client tidak bisa menghabiskan kuota
+    # client lain hanya dengan berbagi IP.
+    rate-limit-client:
+      rateLimit:
+        average: 20
+        burst: 40
+        sourceCriterion:
+          requestHeaderName: "X-Client-Id"
+
+    strip-api-prefix:
+      stripPrefix:
+        prefixes:
+          - "/api"
+
+    # Urutan wajib: cloudflare-ips -> rate-limit-ip -> secure-headers -> auth+scope -> rate-limit-client -> strip prefix
+    gateway-chain:
+      chain:
+        middlewares:
+          - cloudflare-ips
+          - rate-limit-ip
+          - secure-headers
+          - auth-scope
+          - rate-limit-client
+          - strip-api-prefix

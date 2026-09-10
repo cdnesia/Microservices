@@ -1,0 +1,20 @@
+{
+  "name": "auth-service",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "manage-client": "node scripts/manage-client.js"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.7.1",
+    "bcryptjs": "^2.4.3",
+    "chalk": "^4.1.2",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.24.4"
+  }
+}

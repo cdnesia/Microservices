@@ -1,0 +1,23 @@
+# Kredensial per service — biarkan .env.example tetap ter-commit sebagai template
+.env
+.env.*
+!.env.example
+
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# TLS origin cert — sudah ada aturan lebih spesifik di traefik/certs/.gitignore,
+# baris ini cuma jaring pengaman kalau ada salinan di tempat lain
+*.pem
+*.key
+*.crt
