@@ -212,8 +212,10 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
 - Sudah dikerjakan sesi ini: **CLI admin untuk kelola client** (`./auth-service/manage-client.sh`,
   jalankan `npm run manage-client` di dalam container `auth-service` yang sedang up lewat
   `docker compose exec` — pakai `DATABASE_URL` production yang sama, bukan koneksi lokal
-  terpisah). Bisa daftarkan client baru (client_id slug + client_secret di-generate random,
-  ditampilkan sekali lalu di-hash bcrypt sebelum disimpan), generate ulang secret, ubah
+  terpisah). Bisa daftarkan client baru (client_id default-nya slug dari nama + suffix random
+  6-hex supaya tidak gampang ditebak dari nama aplikasi/partner — operator tetap bisa timpa
+  manual kalau mau; client_secret selalu di-generate random penuh, ditampilkan sekali lalu
+  di-hash bcrypt sebelum disimpan), generate ulang secret, ubah
   `allowed_scopes`, dan suspend/aktifkan kembali — tanpa perlu SQL manual lagi. Pilihan scope
   di checklist-nya diambil dari tabel `scopes` (hasil auto-discovery yang sudah ada, lihat
   `auth-service/src/scopeRegistry.js`), bukan daftar hardcoded. Implementasi:

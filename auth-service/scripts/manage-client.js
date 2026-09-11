@@ -19,14 +19,6 @@ function generateClientSecret() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-function slugify(value) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-}
-
 async function scopeChoices(currentScopes = []) {
   const scopes = await clientsData.listScopes();
   if (scopes.length === 0) {
@@ -58,7 +50,10 @@ async function createClient() {
 
   const clientId = await input({
     message: 'client_id (slug unik, huruf kecil/angka/tanda "-"):',
-    default: slugify(name),
+    // Random murni (bukan slug dari nama) supaya client_id tidak gampang ditebak dari nama
+    // aplikasi/partner — operator tetap bisa timpa manual kalau mau id yang lebih rapi, ini
+    // cuma default yang disarankan.
+    default: crypto.randomBytes(6).toString('hex'),
     validate: async (value) => {
       const trimmed = value.trim();
       if (!/^[a-z0-9-]{3,50}$/.test(trimmed)) {
