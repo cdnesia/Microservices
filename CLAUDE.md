@@ -583,6 +583,17 @@ muncul, lalu 4.2 membuktikan client lain tidak ikut kena limit. Sudah divalidasi
 
 ## Cara Jalankan & Test
 
+**Setelah ada perubahan kode**, tiap folder yang punya `docker-compose.yml` juga punya
+`.restart.sh` — jalankan `./.restart.sh` dari folder itu (`traefik/`, `auth-service/`, tiap
+`services/<nama>/`). Scriptnya `git pull` dulu (menarik commit terbaru untuk seluruh repo,
+walau dijalankan dari subfolder), baru rebuild + restart service itu saja, lalu tail log-nya
+otomatis. Untuk `traefik/`, scriptnya sengaja pakai `--force-recreate` (bukan `up -d` biasa)
+— perubahan `dynamic/*.yml` lewat `git pull` pernah tidak ke-reload otomatis meski
+`watch: true`, jadi lebih aman selalu force-recreate daripada mengandalkan hot-reload. Untuk
+`auth-service`/service bisnis, scriptnya `docker compose up -d --build` (cuma me-rebuild
+service itu, tidak ikut restart `mariadb`/service lain yang
+konfignya tidak berubah).
+
 Ada **tiga compose stack terpisah** — jalankan berurutan (network dulu, auth, baru
 traefik, baru service). `auth-service` sekarang bundle `mariadb:10.6` sendiri (lihat "Status
 Implementasi" di atas) jadi **tidak perlu WireGuard/network eksternal apa pun** untuk itu —
