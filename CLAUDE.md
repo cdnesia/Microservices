@@ -28,7 +28,7 @@ end-to-end):
   service lain (lihat `auth-service/src/config/services.js`) tiap boot + tiap 60 detik,
   di-upsert ke tabel `scopes`, dipakai `/verify` untuk scope-check — jadi mapping route→scope
   tidak perlu ditulis manual dua kali (sekali di service, sekali di auth-service). CRUD client
-  (create/rotate secret/ubah scope/suspend) lewat CLI `auth-service/manage-client.sh` —
+  (create/rotate secret/ubah scope/suspend/hapus) lewat CLI `auth-service/manage-client.sh` —
   lihat bawah.
 - **7 service bisnis**, hasil port dari `RESTFULL-API-EXPRESSJS` (project lama milik user —
   lihat "Kenapa MariaDB" di bawah untuk gaya catatan serupa, dan "Response Envelope" tepat di
@@ -252,11 +252,15 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
   hex random supaya tidak gampang ditebak dari nama aplikasi/partner — operator tetap bisa
   timpa manual kalau mau; client_secret selalu di-generate random penuh, ditampilkan sekali lalu
   di-hash bcrypt sebelum disimpan), generate ulang secret, ubah
-  `allowed_scopes`, dan suspend/aktifkan kembali — tanpa perlu SQL manual lagi. Pilihan scope
+  `allowed_scopes`, suspend/aktifkan kembali, dan **hapus permanen** (aksi eksklusif — kalau
+  dicentang bareng aksi lain, aksi lain diabaikan; wajib ketik ulang `client_id` persis untuk
+  konfirmasi; `refresh_tokens` milik client ikut terhapus lewat `ON DELETE CASCADE`, lihat
+  `mariadb/db/init.sql`) — tanpa perlu SQL manual lagi. Pilihan scope
   di checklist-nya diambil dari tabel `scopes` (hasil auto-discovery yang sudah ada, lihat
   `auth-service/src/scopeRegistry.js`), bukan daftar hardcoded. Implementasi:
   `auth-service/scripts/manage-client.js` + `auth-service/src/data/clients.js`
-  (`listClients`/`createClient`/`regenerateSecret`/`updateScopes`/`setStatus`/`listScopes`).
+  (`listClients`/`createClient`/`regenerateSecret`/`updateScopes`/`setStatus`/`deleteClient`/
+  `listScopes`).
   Diverifikasi end-to-end: create → login berhasil, suspend → `/oauth/token` balas
   `invalid_client`, aktifkan lagi → login berhasil lagi, secret ter-rotasi & scope baru
   langsung berlaku di token berikutnya.
@@ -725,8 +729,8 @@ Demo client di-seed lewat `auth-service/db/init.sql` (hanya jalan otomatis kalau
   `pegawai:list`, `pegawai:cek`, `bipot:list`, `jadwal:list`, `khs:cetak`, `tagihan:cek`),
   tidak termasuk yang membuat/mengubah data
 
-Untuk client baru di luar seed itu (atau rotate secret / ubah scope / suspend client yang
-sudah ada), pakai CLI interaktif — bukan SQL manual:
+Untuk client baru di luar seed itu (atau rotate secret / ubah scope / suspend / hapus client
+yang sudah ada), pakai CLI interaktif — bukan SQL manual:
 ```bash
 ./auth-service/manage-client.sh   # butuh auth-service sudah "up" (docker compose ps)
 ```
@@ -964,7 +968,7 @@ Microcervices/                    # root TIDAK punya docker-compose.yml sendiri
 │   ├── docker-compose.yml        # HANYA auth-service (bukan lagi bundle mariadb — lihat mariadb/
 │   │                               # di atas), project name "gateway"
 │   ├── .env                       # JWT_SECRET, DB_HOST/DB_USER/DB_PASSWORD/DB_NAME
-│   ├── manage-client.sh           # CLI admin: create/rotate secret/ubah scope/suspend client
+│   ├── manage-client.sh           # CLI admin: create/rotate secret/ubah scope/suspend/hapus client
 │   ├── scripts/
 │   │   ├── manage-client.js       # npm run manage-client — dipanggil manage-client.sh
 │   │   └── lib/ui.js

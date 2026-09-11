@@ -85,6 +85,13 @@ async function setStatus(clientId, status) {
   return result.affectedRows > 0 ? { clientId, status } : null;
 }
 
+// Permanen — refresh_tokens milik client ini ikut terhapus lewat ON DELETE CASCADE
+// (lihat mariadb/db/init.sql, fk_refresh_tokens_client).
+async function deleteClient(clientId) {
+  const [result] = await pool.query(`DELETE FROM clients WHERE client_id = ?`, [clientId]);
+  return result.affectedRows > 0;
+}
+
 async function listScopes() {
   const [rows] = await pool.query(
     `SELECT scope_name AS scopeName, service_name AS serviceName, description
@@ -101,5 +108,6 @@ module.exports = {
   regenerateSecret,
   updateScopes,
   setStatus,
+  deleteClient,
   listScopes,
 };

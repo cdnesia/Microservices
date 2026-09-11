@@ -1,6 +1,6 @@
 // CLI interaktif tunggal untuk semua hal terkait client: daftarkan client baru, atau kelola
-// client yang sudah ada (generate ulang secret, ubah allowed_scopes, suspend/aktifkan) —
-// satu entry point (`npm run manage-client`) alih-alih script terpisah per aksi.
+// client yang sudah ada (generate ulang secret, ubah allowed_scopes, suspend/aktifkan, hapus
+// permanen) — satu entry point (`npm run manage-client`) alih-alih script terpisah per aksi.
 //
 // Pilihan scope diambil dari tabel `scopes` (diisi otomatis oleh scopeRegistry.discoverScopes()
 // dari manifest /scopes tiap service — lihat src/scopeRegistry.js), bukan daftar hardcoded,
@@ -156,8 +156,30 @@ async function manageClient() {
       { name: 'Generate ulang client_secret', value: 'secret' },
       { name: 'Ubah allowed_scopes', value: 'scope' },
       { name: statusAction, value: 'status' },
+      { name: 'Hapus client (permanen)', value: 'delete' },
     ],
   });
+
+  // Eksklusif: kalau dipilih bareng aksi lain, abaikan yang lain — client sudah tidak ada
+  // lagi setelah dihapus jadi tidak ada gunanya lanjut generate secret/ubah scope/dst.
+  if (actions.includes('delete')) {
+    ui.warn(
+      'Aksi ini PERMANEN — client_id, client_secret, scope, dan semua refresh token milik ' +
+        'client ini akan langsung hilang (cascade), tidak bisa dibatalkan.'
+    );
+    const typed = await input({
+      message: `Ketik ulang client_id "${client.clientId}" untuk konfirmasi penghapusan:`,
+    });
+
+    if (typed.trim() !== client.clientId) {
+      ui.warn('Konfirmasi tidak cocok, penghapusan dibatalkan.');
+      return;
+    }
+
+    await clientsData.deleteClient(client.clientId);
+    ui.success(`Client "${client.clientId}" berhasil dihapus.`);
+    return;
+  }
 
   if (actions.includes('secret')) {
     const proceed = await confirm({
