@@ -34,7 +34,9 @@ end-to-end):
   lihat "Kenapa MariaDB" di bawah untuk gaya catatan serupa, dan "Response Envelope" tepat di
   bawah ini untuk konteks porting-nya): `service-ruangan`, `service-pegawai`, `service-bipot`,
   `service-jadwal`, `service-khs`, `service-tagihan`, `service-telegram` — masing-masing
-  `services/<nama>/`, compose sendiri (join `gateway-net` sebagai network eksternal),
+  folder top-level `<nama>/` sendiri (dulu di bawah `services/<nama>/`, sudah dipindah ke root
+  lewat `git mv` supaya sejajar dengan `auth-service/`/`mariadb/`/`traefik/`), compose sendiri
+  (join `gateway-net` sebagai network eksternal),
   `GET /scopes`, guard `X-Client-Id`. `service-ruangan` adalah yang paling sederhana (1 DB
   eksternal, 1 route) — jadikan contoh kalau mau lihat pola dasarnya sebelum baca yang lain.
   **Scaffolding-nya teruji jalan** (build, health check, `/scopes`, auth+scope enforcement,
@@ -55,16 +57,37 @@ end-to-end):
   Kode di dalam tiap service bisnis (`src/index.js`) **tidak berubah sama sekali** — mereka
   tetap expose route tanpa prefix apa pun (mis. `/ruangan/list`), semua prefix-handling terjadi
   di gateway.
-- **Sembilan compose file terpisah, satu per folder** (`traefik/`, `auth-service/`, dan satu
-  per `services/*/` — tidak ada `docker-compose.yml` di root sama sekali). `traefik/` dan
-  `auth-service/` di-pin `name: gateway` yang **sama** supaya di Docker Desktop tetap kebaca
-  sebagai satu grup "gateway" walau dijalankan dari `docker compose up -d` yang berbeda-beda
-  folder; tiap `services/*/` memang sengaja grup terpisah (nama service masing-masing) karena
-  bisa dideploy/discale sendiri. Konsekuensi dua compose file berbagi nama project: `docker
+- **Sepuluh compose file terpisah, satu per folder** (`traefik/`, `auth-service/`, `mariadb/`,
+  dan satu per folder `service-*` di root — ketujuh service bisnis dulu bernaung di bawah
+  `services/<nama>/`, sudah dipindah jadi folder top-level lewat `git mv` supaya benar-benar
+  berdiri sendiri, sejajar dengan `auth-service/`; tidak ada `docker-compose.yml` di root sama
+  sekali). `traefik/`, `auth-service/`, dan `mariadb/` di-pin `name: gateway` yang **sama**
+  supaya di Docker Desktop tetap kebaca sebagai satu grup "gateway" walau dijalankan dari
+  `docker compose up -d` yang berbeda-beda folder; tiap folder `service-*` bisnis memang
+  sengaja grup terpisah (nama service masing-masing, tanpa `name:` di-pin) karena bisa
+  dideploy/discale sendiri. Konsekuensi compose file berbagi nama project: `docker
   compose ps`/`down` dari salah satu compose file itu cuma melihat/mematikan service yang
   didefinisikan di file itu sendiri (compose akan warning "orphan containers" untuk service
-  dari compose file "gateway" satunya — bukan error, cuma informasi bahwa grup itu diisi
+  dari compose file "gateway" lainnya — bukan error, cuma informasi bahwa grup itu diisi
   lebih dari satu file).
+
+  **Migrasi folder service bisnis dari `services/<nama>/` ke `<nama>/` (top-level)**: dilakukan
+  lewat `git mv` (history tetap terjaga per file). Konsekuensi penting untuk deployment yang
+  sudah jalan (mis. VPS produksi): `.env` tiap service **tidak ikut ter-mv** karena memang
+  di-`.gitignore` (bukan file yang di-track git) — setelah `git pull` di server yang masih
+  punya folder lama `services/<nama>/`, file `.env` lama TIDAK otomatis pindah ke folder baru
+  `<nama>/` (git pull cuma menghapus/membuat file yang di-track; folder `services/<nama>/`
+  akan tersisa berisi `.env` yatim, sementara folder baru `<nama>/` tidak punya `.env` sama
+  sekali). **Wajib** dikerjakan manual sekali di tiap server yang sudah punya deployment lama,
+  SEBELUM restart service pakai path baru:
+  ```bash
+  for d in service-ruangan service-pegawai service-bipot service-jadwal service-khs service-tagihan service-telegram; do
+    mv "services/$d/.env" "$d/.env"
+  done
+  rm -rf services/   # folder lama sudah kosong dari file ter-track, aman dihapus
+  ```
+  Baru setelah itu jalankan `./restart.sh` dari folder baru masing-masing (`<nama>/restart.sh`,
+  bukan lagi `services/<nama>/restart.sh`).
 
 ### Response Envelope
 
@@ -156,7 +179,7 @@ dipakai `auth-service` (itu database khusus punya gateway sendiri, cuma `clients
 helper `src/db/pools.js` — file identik di keenam service itu (parse URL manual, bukan opsi
 `uri` mysql2, supaya `connectionLimit`/`timezone` pasti kepakai; satu pool lazy per nama DB,
 mirip `getPool(name)` di project lama `RESTFULL-API-EXPRESSJS`). Lihat
-`services/service-ruangan/src/db/pools.js` sebagai contoh.
+`service-ruangan/src/db/pools.js` sebagai contoh.
 
 | Service | `DATABASE_URL_<NAMA>` yang dibutuhkan |
 |---|---|
@@ -442,7 +465,7 @@ benar-benar production-ready di VPS:
    VPS ini.
 4. **DNS** — A record domain di Cloudflare diarahkan ke IP VPS, status **proxied** (awan
    oranye), mode SSL/TLS **Full (strict)**.
-5. **Kredensial** — semua `.env` (`auth-service/.env`, tiap `services/<nama>/.env`) masih
+5. **Kredensial** — semua `.env` (`auth-service/.env`, tiap `<nama>/.env` service bisnis) masih
    berisi placeholder di repo ini, isi ulang dengan kredensial asli di VPS (`JWT_SECRET`,
    `DB_PASSWORD`, `DATABASE_URL_<NAMA>` per service, `TELEGRAM_BOT_TOKEN`).
 6. **Opsional, defense-in-depth tambahan**: firewall level OS di VPS (`ufw`/`iptables`) yang
@@ -554,7 +577,7 @@ sendiri ada di `/opt/mariadb-server/docker-compose.yml`, di luar project ini):
 | `AUTH_DB_POOL_SIZE` | 20 | `connectionLimit` pool `auth-service` ke instance MariaDB bersama |
 | `AUTH_SERVICE_MEM_LIMIT` / `AUTH_SERVICE_CPUS` | 512m / 1.0 | Limit resource container `auth-service` |
 
-Tiap `services/<nama>/.env` (business service):
+Tiap `<nama>/.env` (business service, folder top-level):
 | Variabel | Default | Fungsi |
 |---|---|---|
 | `DB_POOL_SIZE` | 10 | `connectionLimit` — dipakai untuk SETIAP nama database yang di-`getPool()` service ini (lihat model budget di atas) |
@@ -591,7 +614,7 @@ atau `npx newman run postman/Microcervices-Gateway.postman_collection.json`.
 Isi: 6 request auth flow (token, refresh + rotasi, reuse-ditolak, revoke, revoke-lagi-ditolak),
 2 request happy-path ke `service-ruangan` (dipakai sebagai contoh business service — request
 2.1/2.2 tolerir 200 ATAU 500, lihat catatan di deskripsi request-nya: 500 itu ekspektasi normal
-sampai `DATABASE_URL_SIADE_OLD` di `services/service-ruangan/.env` diisi kredensial asli, bukan
+sampai `DATABASE_URL_SIADE_OLD` di `service-ruangan/.env` diisi kredensial asli, bukan
 kegagalan test), 8 negative test (401/403/400 termasuk regression test payload jahat yang dulu
 bikin crash), dan 2 request rate-limit yang **self-contained** — klik Send sekali di 4.1,
 script-nya sendiri yang menembak ~60 request paralel dan assert campuran (200 atau 500)/429
@@ -601,8 +624,8 @@ muncul, lalu 4.2 membuktikan client lain tidak ikut kena limit. Sudah divalidasi
 ## Cara Jalankan & Test
 
 **Setelah ada perubahan kode**, tiap folder yang punya `docker-compose.yml` juga punya
-`restart.sh` — jalankan `./restart.sh` dari folder itu (`traefik/`, `auth-service/`, tiap
-`services/<nama>/`). Scriptnya `git pull` dulu (menarik commit terbaru untuk seluruh repo,
+`restart.sh` — jalankan `./restart.sh` dari folder itu (`traefik/`, `auth-service/`, `mariadb/`,
+tiap `<nama>/` service bisnis). Scriptnya `git pull` dulu (menarik commit terbaru untuk seluruh repo,
 walau dijalankan dari subfolder), baru rebuild + restart service itu saja, lalu tail log-nya
 otomatis. Untuk `traefik/`, scriptnya sengaja pakai `--force-recreate` (bukan `up -d` biasa)
 — perubahan `dynamic/*.yml` lewat `git pull` pernah tidak ke-reload otomatis meski
@@ -641,7 +664,7 @@ docker compose ps
 # Pola sama persis untuk ketujuh: ruangan, pegawai, bipot, jadwal, khs, tagihan, telegram —
 # tapi kredensial DATABASE_URL_<NAMA>-nya BEDA (database eksternal kampus, bukan mariadb
 # gateway) — lihat tabel "Service bisnis baru" di atas untuk tahu nama DB per service.
-cd ../services/service-ruangan && cp .env.example .env && docker compose up -d --build
+cd ../service-ruangan   && cp .env.example .env && docker compose up -d --build
 cd ../service-pegawai   && cp .env.example .env && docker compose up -d --build
 cd ../service-bipot     && cp .env.example .env && docker compose up -d --build
 cd ../service-jadwal    && cp .env.example .env && docker compose up -d --build
@@ -719,7 +742,7 @@ curl -k -X POST https://localhost:8443/oauth/token \
   -d '{"grant_type":"client_credentials","client_id":"demo-client","client_secret":"demo-secret"}'
 
 # 2. Pakai access_token ke salah satu service bisnis lewat gateway (contoh: service-ruangan —
-# butuh DATABASE_URL_SIADE_OLD asli di services/service-ruangan/.env supaya balas 200 dengan
+# butuh DATABASE_URL_SIADE_OLD asli di service-ruangan/.env supaya balas 200 dengan
 # data sungguhan, kalau belum tetap lolos gateway tapi service sendiri balas 500)
 curl -k https://localhost:8443/api/v1/ruangan/list -H "Authorization: Bearer <access_token>"
 
@@ -743,10 +766,10 @@ dipakai lagi setelah rotasi, dan refresh token yang sudah di-revoke ditolak. Pay
 
 **Menambah service baru** (misalnya `service-b`), contoh ikuti pola salah satu dari 7 service
 bisnis yang sudah ada — `service-ruangan` yang paling sederhana (1 DB eksternal, 1 route):
-1. Buat folder `services/service-b` dengan `Dockerfile` + `docker-compose.yml` sendiri (lihat
-   `services/service-ruangan/docker-compose.yml` sebagai contoh) — network `gateway-net`
-   sebagai `external: true`. Compose file-nya berdiri sendiri, tidak digabung ke compose milik
-   `traefik`/`auth-service`.
+1. Buat folder top-level `service-b/` (sejajar dengan `service-ruangan/`, `auth-service/`, dst.)
+   dengan `Dockerfile` + `docker-compose.yml` sendiri (lihat `service-ruangan/docker-compose.yml`
+   sebagai contoh) — network `gateway-net` sebagai `external: true`. Compose file-nya berdiri
+   sendiri, tidak digabung ke compose milik `traefik`/`auth-service`.
 2. Expose `GET /scopes` di service itu — manifest berisi `{ service, routes: [{ method, path,
    scope, description }] }`. **Tidak perlu edit apa pun di `auth-service`** untuk
    mendaftarkan scope — auto-discovered.
@@ -760,7 +783,7 @@ bisnis yang sudah ada — `service-ruangan` yang paling sederhana (1 DB eksterna
    (atau SQL langsung kalau perlu).
 6. Jalankan: `docker compose up -d --build` di `auth-service/` dulu kalau ada perubahan di
    sana (mis. `config/services.js`), lalu `docker compose up -d` di `traefik/` kalau ada
-   perubahan dynamic config, baru `cd services/service-b && docker compose up -d --build`.
+   perubahan dynamic config, baru `cd service-b && docker compose up -d --build`.
 
 ---
 
@@ -931,34 +954,40 @@ Microcervices/                    # root TIDAK punya docker-compose.yml sendiri
 │   └── dynamic/
 │       ├── middlewares.yml       # semua middleware & chain, reusable
 │       └── routers.yml           # routers + services per microservice
+├── mariadb/                      # database milik auth-service SAJA, compose terpisah dari
+│   │                               # auth-service/ (project name "gateway" juga) — lihat
+│   │                               # "Status Implementasi" di atas untuk alasan pemisahannya
+│   ├── docker-compose.yml
+│   ├── .env
+│   └── db/init.sql               # schema + seed — AUTO-RUN saat volume mariadb_data kosong
 ├── auth-service/                 # control plane: client, scope, token issuer, refresh/revoke
-│   ├── docker-compose.yml        # auth-service + mariadb:10.6 sendiri, project name "gateway"
-│   │                               # juga — lihat "Status Implementasi" & "Database Eksternal
-│   │                               # (MariaDB Bersama)" (sekarang historis) di atas
+│   ├── docker-compose.yml        # HANYA auth-service (bukan lagi bundle mariadb — lihat mariadb/
+│   │                               # di atas), project name "gateway"
 │   ├── .env                       # JWT_SECRET, DB_HOST/DB_USER/DB_PASSWORD/DB_NAME
 │   ├── manage-client.sh           # CLI admin: create/rotate secret/ubah scope/suspend client
-│   ├── db/
-│   │   └── init.sql               # schema + seed — AUTO-RUN saat volume mariadb_data kosong
 │   ├── scripts/
 │   │   ├── manage-client.js       # npm run manage-client — dipanggil manage-client.sh
 │   │   └── lib/ui.js
 │   └── src/{config,data,db,routes}/
-└── services/
-    ├── service-ruangan/           # hasil port RESTFULL-API-EXPRESSJS — pola paling sederhana,
-    │                               # jadikan contoh kalau mau lihat struktur dasar tiap service:
-    │   ├── docker-compose.yml     # 1 DB eksternal (SIADE_OLD), 1 route
-    │   ├── .env.example           # DATABASE_URL_SIADE_OLD
-    │   └── src/{db,utils,services}/, index.js
-    ├── service-pegawai/           # sama seperti service-ruangan, 2 route (list, cek)
-    ├── service-bipot/             # +salinan privat services/mahasiswa.service.js (2 DB: SIMAKU, SIADE)
-    ├── service-jadwal/            # 2 DB (SIADE, SIADE_OLD), 1 route POST
-    ├── service-khs/                # 2 DB + puppeteer/ejs (generate PDF) — lihat src/views/khs.ejs,
-    │                               # src/assets/favicon-32x32.png, src/utils/pdf.js, Dockerfile
-    │                               # beda (install Chromium lewat apk sebelum npm install)
-    ├── service-tagihan/           # paling berat: 3 DB (PAYMENT, SIADE, SIMAKU) + salinan privat
-    │                               # mahasiswa.service.js DAN bipot.service.js, 4 route
-    ├── service-telegram/          # satu-satunya TANPA database — cuma proxy ke Telegram Bot API
-    └── service-b/                 # pola yang sama untuk tiap service baru berikutnya
+├── service-ruangan/               # hasil port RESTFULL-API-EXPRESSJS — pola paling sederhana,
+│   │                               # jadikan contoh kalau mau lihat struktur dasar tiap service.
+│   │                               # Folder top-level (dulu di bawah services/, sudah dipindah
+│   │                               # lewat git mv), compose sendiri, project name = nama folder
+│   │                               # (BUKAN "gateway" — dideploy/discale terpisah)
+│   ├── docker-compose.yml         # 1 DB eksternal (SIADE_OLD), 1 route
+│   ├── .env.example                # DATABASE_URL_SIADE_OLD
+│   └── src/{db,utils,services}/, index.js
+├── service-pegawai/               # sama seperti service-ruangan, 2 route (list, cek)
+├── service-bipot/                 # +salinan privat src/services/mahasiswa.service.js (2 DB: SIMAKU, SIADE)
+├── service-jadwal/                # 2 DB (SIADE, SIADE_OLD), 1 route POST
+├── service-khs/                    # 2 DB + puppeteer/ejs (generate PDF) — lihat src/views/khs.ejs,
+│   │                               # src/assets/favicon-32x32.png, src/utils/pdf.js, Dockerfile
+│   │                               # beda (install Chromium lewat apk sebelum npm install)
+├── service-tagihan/               # paling berat: 3 DB (PAYMENT, SIADE, SIMAKU) + salinan privat
+│   │                               # mahasiswa.service.js DAN bipot.service.js, 4 route
+├── service-telegram/               # satu-satunya TANPA database — cuma proxy ke Telegram Bot API
+└── service-b/                      # pola yang sama untuk tiap service baru berikutnya, juga
+                                     # folder top-level, bukan di bawah services/
 ```
 
 Ketujuh service di atas (`service-ruangan` s.d. `service-telegram`) semuanya punya struktur

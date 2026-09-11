@@ -1,7 +1,7 @@
 # Traefik — proxy stateless murni, tidak punya data, jadi compose-nya sendiri di sini
-# (bukan lagi di root) — konsisten dengan auth-service/docker-compose.yml (mariadb +
-# auth-service) dan services/service-a/docker-compose.yml: tiap bagian punya compose
-# sendiri di folder-nya masing-masing.
+# (bukan lagi di root) — konsisten dengan auth-service/, mariadb/, dan tiap folder
+# service-* di root (service-ruangan/, service-pegawai/, dst., dulu ada di services/<nama>/,
+# sudah dipindah ke top-level): tiap bagian punya compose sendiri di folder-nya masing-masing.
 #
 # `name: gateway` disamakan dengan auth-service/docker-compose.yml SENGAJA — supaya di
 # Docker Desktop kedua compose project ini tetap kebaca sebagai satu grup "gateway", walau

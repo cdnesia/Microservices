@@ -1,9 +1,10 @@
-# Compose file milik service-bipot sendiri — bisa dijalankan/di-deploy terpisah dari
-# gateway (traefik di docker-compose.yml root, mariadb+auth-service di
-# auth-service/docker-compose.yml). Network `gateway-net` harus sudah dibuat manual (nama-nya
-# dipin literal supaya bisa dirujuk di sini).
+# Compose file milik service-jadwal sendiri — folder top-level, sejajar dengan traefik/,
+# auth-service/, mariadb/ (dulu ada di services/service-jadwal/, sudah dipindah ke root lewat
+# git mv supaya tiap service benar-benar berdiri sendiri, bukan lagi bernaung di bawah folder
+# services/ bersama). Network `gateway-net` harus sudah dibuat manual (nama-nya dipin literal
+# supaya bisa dirujuk di sini).
 #
-# DATABASE_URL_SIMAKU dan DATABASE_URL_SIADE menunjuk ke database eksternal (BUKAN mariadb
+# DATABASE_URL_SIADE dan DATABASE_URL_SIADE_OLD menunjuk ke database eksternal (BUKAN mariadb
 # gateway) — kredensial harus disediakan sendiri, lihat .env.example.
 #
 # Jalankan: docker compose up -d --build   (dari folder ini, SETELAH auth-service jalan)
@@ -14,12 +15,12 @@ networks:
     external: true
 
 services:
-  service-bipot:
+  service-jadwal:
     build: .
-    container_name: service-bipot
+    container_name: service-jadwal
     environment:
-      DATABASE_URL_SIMAKU: ${DATABASE_URL_SIMAKU}
       DATABASE_URL_SIADE: ${DATABASE_URL_SIADE}
+      DATABASE_URL_SIADE_OLD: ${DATABASE_URL_SIADE_OLD}
       PORT: 5000
       # Budget koneksi: total DB_POOL_SIZE semua service yang nempel ke database yang
       # sama harus punya headroom di bawah DB_MAX_CONNECTIONS-nya — lihat CLAUDE.md
