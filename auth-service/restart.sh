@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tarik perubahan terbaru lalu rebuild + restart auth-service. `mariadb` tidak ikut
-# di-rebuild (tidak punya build context) dan tidak di-restart kalau config-nya tidak
-# berubah — cuma auth-service yang kena --build.
+# Tarik perubahan terbaru lalu rebuild + restart auth-service. Database (mariadb) ada di
+# compose TERPISAH (../mariadb/) sejak dipisah — restart ini tidak menyentuhnya sama sekali,
+# itu tujuannya. Pastikan ../mariadb/ sudah up & healthy dulu sebelum jalankan ini.
 set -euo pipefail
 cd "$(dirname "$0")"
 

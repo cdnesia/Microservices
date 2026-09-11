@@ -1,22 +1,25 @@
-# auth-service + mariadb (10.6) sendiri, dibundle di compose ini — bukan lagi connect ke
-# instance MariaDB eksternal (/opt/mariadb-server di VPS "biznet", lihat git history untuk
-# bentuk sebelumnya). Dikembalikan ke pola bundled supaya auth-service tidak bergantung pada
-# konektivitas WireGuard ke instance eksternal itu — data auth-service (clients, scopes,
-# refresh_tokens) memang cuma dipakai auth-service sendiri, tidak ada consumer lain yang perlu
-# akses langsung ke database ini, jadi tidak ada alasan kuat untuk taruh di instance bersama.
+# auth-service SAJA — mariadb (10.6) sekarang di compose TERPISAH (../mariadb/docker-compose.yml)
+# supaya restart/rebuild auth-service (mis. lewat restart.sh setelah ada perubahan kode) TIDAK
+# ikut me-restart database. Sebelumnya sempat dibundle di compose ini sendiri, lalu dipisah —
+# lihat git history & CLAUDE.md bagian "Migrasi mariadb ke compose terpisah" kalau butuh
+# konteks/riwayat lengkapnya.
 #
-# init.sql (auth-service/db/init.sql) AUTO-RUN lewat docker-entrypoint-initdb.d — cuma
-# berlaku sekali saat volume `mariadb_data` masih kosong (first run). Kalau schema berubah
-# setelah itu, jalankan migrasi manual, bukan andalkan auto-run ini lagi.
+# TIDAK ADA `depends_on` ke mariadb lagi (dua compose project terpisah, Docker Compose tidak
+# bisa depends_on lintas project) — pastikan `../mariadb/` sudah `docker compose up -d` dan
+# healthy DULU sebelum start auth-service ini, kalau tidak connect pertama akan gagal (app
+# tidak auto-retry infinite, cek src/db/pool.js kalau perlu tambah retry logic nanti).
 #
-# DB_HOST default "mariadb" (nama service ini, resolvable lewat gateway-net) — TIDAK perlu
-# IP/WireGuard apa pun lagi untuk auth-service. Database eksternal kampus (SIADE/SIMAKU/
-# PAYMENT) yang dipakai 6 service bisnis lain TETAP eksternal seperti biasa, tidak terpengaruh
-# perubahan ini — lihat CLAUDE.md tabel "Service bisnis baru".
+# DB_HOST default "mariadb-server" (container_name di ../mariadb/docker-compose.yml,
+# resolvable lewat gateway-net yang sama walau beda compose project) — TIDAK perlu IP/WireGuard
+# apa pun. Database eksternal kampus (SIADE/SIMAKU/PAYMENT) yang dipakai 6 service bisnis lain
+# TETAP eksternal seperti biasa, tidak terpengaruh perubahan ini — lihat CLAUDE.md tabel
+# "Service bisnis baru".
 #
-# Jalankan: cp .env.example .env (isi JWT_SECRET + DB_USER/DB_PASSWORD, DB_HOST/DB_NAME biarkan
-# default), lalu docker compose up -d --build (dari folder ini). Jalankan SEBELUM
-# traefik/docker-compose.yml supaya auth-service sudah siap saat traefik mulai forward request.
+# Jalankan: cp .env.example .env (isi JWT_SECRET + DB_USER/DB_PASSWORD — HARUS SAMA PERSIS
+# dengan yang diisi di ../mariadb/.env, DB_HOST/DB_NAME biarkan default), lalu
+# docker compose up -d --build (dari folder ini). Jalankan SETELAH ../mariadb/ up & healthy,
+# SEBELUM traefik/docker-compose.yml supaya auth-service sudah siap saat traefik mulai forward
+# request.
 
 name: gateway
 
@@ -24,52 +27,13 @@ networks:
   gateway-net:
     external: true
 
-volumes:
-  mariadb_data:
-
 services:
-  mariadb:
-    image: mariadb:10.6
-    container_name: mariadb-server
-    restart: unless-stopped
-    environment:
-      MARIADB_RANDOM_ROOT_PASSWORD: "yes" # app tidak pernah pakai root sama sekali
-      MARIADB_DATABASE: ${DB_NAME:-gateway_auth}
-      MARIADB_USER: ${DB_USER}
-      MARIADB_PASSWORD: ${DB_PASSWORD}
-    command:
-      - --innodb-flush-log-at-trx-commit=2 # trade throughput vs durability, cukup untuk data control-plane ini
-      - --wait-timeout=180 # reclaim koneksi idle lebih cepat dari default 8 jam
-    volumes:
-      - mariadb_data:/var/lib/mysql
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    networks:
-      - gateway-net
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    healthcheck:
-      test: ["CMD", "mariadb-admin", "ping", "-u", "${DB_USER}", "-p${DB_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
   auth-service:
     build: .
     container_name: gateway-auth-service
-    depends_on:
-      mariadb:
-        condition: service_healthy
     environment:
       JWT_SECRET: ${JWT_SECRET}
-      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST:-mariadb}:${DB_PORT:-3306}/${DB_NAME:-gateway_auth}
+      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST:-mariadb-server}:${DB_PORT:-3306}/${DB_NAME:-gateway_auth}
       PORT: 4000
       DB_POOL_SIZE: ${AUTH_DB_POOL_SIZE:-20}
     networks:

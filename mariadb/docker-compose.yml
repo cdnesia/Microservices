@@ -1,0 +1,69 @@
+# MariaDB 10.6 milik auth-service, DIPISAH dari auth-service/docker-compose.yml (sebelumnya
+# dibundle di situ) — supaya restart/rebuild auth-service (mis. lewat auth-service/restart.sh
+# setelah ada perubahan kode) TIDAK ikut me-restart database ini. Compose file ini berdiri
+# sendiri, project name TETAP "gateway" (sama seperti traefik/ & auth-service/) supaya di
+# Docker Desktop tetap kebaca satu grup — tapi bisa di-up/down/restart independen.
+#
+# PENTING kalau migrasi dari setup lama (mariadb dulu ada di auth-service/docker-compose.yml):
+# volume `mariadb_data` di bawah SENGAJA di-set `external: true` dengan nama eksplisit
+# `gateway_mariadb_data` — itu nama volume yang otomatis dibuat Docker Compose dulu (pola
+# "<project>_<volume_key>", project-nya "gateway"). Dengan `external: true` + nama yang sama
+# persis, compose ini CUMA NEMPEL ke volume yang sudah ada isinya, TIDAK bikin volume baru
+# kosong — jadi data (clients/scopes/refresh_tokens) tidak hilang saat migrasi. Lihat
+# CLAUDE.md bagian "Migrasi mariadb ke compose terpisah" untuk urutan langkah migrasi yang
+# aman (harus stop+rm container LAMA dulu sebelum start yang baru, container_name-nya sama
+# persis jadi akan bentrok kalau tidak).
+#
+# init.sql (mariadb/db/init.sql) AUTO-RUN lewat docker-entrypoint-initdb.d — cuma berlaku
+# sekali saat volume masih kosong (first run). Kalau schema berubah setelah itu, jalankan
+# migrasi manual, bukan andalkan auto-run ini lagi.
+#
+# Jalankan: cp .env.example .env (isi DB_USER/DB_PASSWORD/DB_NAME — HARUS SAMA PERSIS dengan
+# yang diisi di auth-service/.env, karena dua compose project ini terpisah tapi mengacu ke
+# kredensial yang sama), lalu docker compose up -d (dari folder ini). Jalankan SEBELUM
+# auth-service/docker-compose.yml.
+
+name: gateway
+
+networks:
+  gateway-net:
+    external: true
+
+volumes:
+  mariadb_data:
+    external: true
+    name: gateway_mariadb_data
+
+services:
+  mariadb:
+    image: mariadb:10.6
+    container_name: mariadb-server
+    restart: unless-stopped
+    environment:
+      MARIADB_RANDOM_ROOT_PASSWORD: "yes" # app tidak pernah pakai root sama sekali
+      MARIADB_DATABASE: ${DB_NAME:-gateway_auth}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+    command:
+      - --innodb-flush-log-at-trx-commit=2 # trade throughput vs durability, cukup untuk data control-plane ini
+      - --wait-timeout=180 # reclaim koneksi idle lebih cepat dari default 8 jam
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - gateway-net
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-u", "${DB_USER}", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
