@@ -601,7 +601,7 @@ muncul, lalu 4.2 membuktikan client lain tidak ikut kena limit. Sudah divalidasi
 ## Cara Jalankan & Test
 
 **Setelah ada perubahan kode**, tiap folder yang punya `docker-compose.yml` juga punya
-`.restart.sh` — jalankan `./.restart.sh` dari folder itu (`traefik/`, `auth-service/`, tiap
+`restart.sh` — jalankan `./restart.sh` dari folder itu (`traefik/`, `auth-service/`, tiap
 `services/<nama>/`). Scriptnya `git pull` dulu (menarik commit terbaru untuk seluruh repo,
 walau dijalankan dari subfolder), baru rebuild + restart service itu saja, lalu tail log-nya
 otomatis. Untuk `traefik/`, scriptnya sengaja pakai `--force-recreate` (bukan `up -d` biasa)
