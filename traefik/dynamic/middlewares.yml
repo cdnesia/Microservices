@@ -101,12 +101,14 @@ http:
 
     # Proteksi dashboard Traefik (router terpisah di routers.yml, Host-based di subdomain
     # sendiri supaya tidak bentrok dengan PathPrefix(/api/*) punya service bisnis). Password
-    # di-generate random sekali (htpasswd -nbB), di-hash bcrypt — plaintext-nya cuma
-    # ditampilkan sekali ke operator, tidak disimpan di sini.
+    # di-generate random sekali, di-hash MD5/apr1 (`htpasswd -nbm`) — SENGAJA bukan bcrypt
+    # (`-B`): htpasswd di macOS generate bcrypt dengan prefix `$2y$` yang tidak selalu
+    # dikenali implementasi Go-nya Traefik, apr1 lebih universal didukung. Plaintext password
+    # cuma ditampilkan sekali ke operator, tidak disimpan di sini.
     dashboard-auth:
       basicAuth:
         users:
-          - "admin:$2y$05$YwQFT8V9b6m8YwxCgjqy7OrU1eyZFfPGLGVaNdVwvJ.5oMQHNscKa"
+          - "admin:$apr1$6AtMgllb$5dcXagcOk.V.kJtVvklX0/"
 
     # Urutan wajib: cloudflare-ips -> rate-limit-ip -> secure-headers -> auth+scope -> rate-limit-client -> strip prefix
     gateway-chain:

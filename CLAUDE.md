@@ -285,7 +285,7 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
      ke pola introspeksi per-request (lebih lambat) atau token blocklist di Redis.
   3. ~~Traefik dashboard tanpa auth~~ — selesai, dan sekarang **sudah publik** dengan BasicAuth
      di depannya (lihat "Dashboard Traefik — Publik" di bawah). Kredensial BasicAuth di-generate
-     random sekali, kalau perlu diganti/rotasi: `htpasswd -nbB <user> <password-baru>`, ganti
+     random sekali, kalau perlu diganti/rotasi: `htpasswd -nbm <user> <password-baru>`, ganti
      hash di `traefik/dynamic/middlewares.yml` (middleware `dashboard-auth`), lalu
      `docker compose up -d` (dari `traefik/`) untuk reload dynamic config.
   4. JWT pakai HS256 (secret simetris) — aman selama hanya `auth-service` yang verifikasi;
@@ -451,9 +451,12 @@ Host-based di subdomain terpisah menghindari bentrok itu sama sekali.
    `cloudflare-ips` (IP harus dari Cloudflare/loopback) + `dashboard-auth` (BasicAuth),
    service `api@internal`.
 3. `traefik/dynamic/middlewares.yml` — middleware `dashboard-auth` (`basicAuth`), password
-   di-generate random sekali (`htpasswd -nbB admin <password>`), di-hash bcrypt. **Plaintext
-   password cuma ditampilkan sekali ke operator saat dibuat** — kalau lupa/perlu rotasi,
-   generate ulang (lihat poin 3 di "Belum dikerjakan" bagian atas), jangan coba decode hash-nya.
+   di-generate random sekali (`htpasswd -nbm admin <password>`), di-hash MD5/apr1 — SENGAJA
+   bukan bcrypt (`-B`): htpasswd di macOS generate bcrypt prefix `$2y$` yang tidak selalu
+   dikenali implementasi Go-nya Traefik (pernah kejadian: login selalu ditolak walau password
+   benar), apr1 lebih universal didukung. **Plaintext password cuma ditampilkan sekali ke
+   operator saat dibuat** — kalau lupa/perlu rotasi, generate ulang (lihat poin 3 di "Belum
+   dikerjakan" bagian atas), jangan coba decode hash-nya.
 4. `traefik/docker-compose.yml` — port `8080` **tidak di-publish lagi** (dulu loopback-only
    buat SSH tunnel, sekarang tidak relevan karena `api.insecure` off).
 
