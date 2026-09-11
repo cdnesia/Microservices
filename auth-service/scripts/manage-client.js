@@ -49,15 +49,15 @@ async function createClient() {
   });
 
   const clientId = await input({
-    message: 'client_id (slug unik, huruf kecil/angka/tanda "-"):',
+    message: 'client_id (huruf kecil/angka/tanda "-"/"_"):',
     // Random murni (bukan slug dari nama) supaya client_id tidak gampang ditebak dari nama
     // aplikasi/partner — operator tetap bisa timpa manual kalau mau id yang lebih rapi, ini
-    // cuma default yang disarankan.
-    default: crypto.randomBytes(6).toString('hex'),
+    // cuma default yang disarankan. Prefix "client_" + 32 hex char (16 byte random).
+    default: `client_${crypto.randomBytes(16).toString('hex')}`,
     validate: async (value) => {
       const trimmed = value.trim();
-      if (!/^[a-z0-9-]{3,50}$/.test(trimmed)) {
-        return 'Hanya huruf kecil, angka, dan tanda "-", 3-50 karakter.';
+      if (!/^[a-z0-9_-]{3,64}$/.test(trimmed)) {
+        return 'Hanya huruf kecil, angka, tanda "-", dan "_", 3-64 karakter.';
       }
       const existing = await clientsData.findClientById(trimmed);
       if (existing) {
