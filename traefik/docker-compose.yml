@@ -33,12 +33,10 @@ services:
       # perlu diubah antar environment.
       - "${TRAEFIK_HTTP_PORT:-8081}:80"
       - "${TRAEFIK_HTTPS_PORT:-8443}:443"
-      - "127.0.0.1:${TRAEFIK_DASHBOARD_PORT:-8080}:8080" # dashboard, dev-only — di-bind ke
-                              # loopback saja, TIDAK ke 0.0.0.0, supaya tidak reachable dari
-                              # luar mesin ini sama sekali (termasuk lewat internet, terlepas
-                              # dari IP allowlist di atas). Akses remote lewat SSH tunnel:
-                              # ssh -L 8080:localhost:8080 <host>, lalu buka
-                              # http://localhost:8080/dashboard/ dari mesin lokal.
+      # Port 8080 (dashboard insecure) SENGAJA tidak di-publish lagi — api.insecure di
+      # traefik.yml sudah dimatikan. Dashboard sekarang diakses lewat router eksplisit
+      # (traefik-dashboard di dynamic/routers.yml, Host-based subdomain) yang lewat
+      # entrypoint websecure di atas, dilindungi cloudflare-ips + BasicAuth.
     volumes:
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./dynamic:/etc/traefik/dynamic:ro

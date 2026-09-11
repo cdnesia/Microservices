@@ -1,5 +1,19 @@
 http:
   routers:
+    # Dashboard Traefik — Host-based di subdomain sendiri (BUKAN path di domain utama) supaya
+    # tidak bentrok dengan PathPrefix(/api/*) punya service bisnis di bawah. Butuh DNS A record
+    # untuk subdomain ini di Cloudflare (proxied) menunjuk ke IP VPS yang sama, dan sertifikat
+    # origin (traefik/certs/) yang mencakup subdomain ini (wildcard *.umjambi.ac.id sudah cukup).
+    traefik-dashboard:
+      rule: "Host(`traefik.production.umjambi.ac.id`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - cloudflare-ips
+        - dashboard-auth
+      service: api@internal
+
     # Endpoint publik untuk menerbitkan token (client_credentials).
     # Tidak lewat auth-scope middleware karena memang belum ada token di titik ini.
     auth-token:

@@ -272,19 +272,22 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
      `ClientAddr`/`ClientHost` di access log Traefik setelah live, harus IP visitor asli bukan
      IP edge Cloudflare, dan uji rate-limit-ip dengan 2 visitor beda IP lewat Cloudflare tidak
      saling mempengaruhi kuota.
-  3. Dashboard Traefik (`traefik/docker-compose.yml`) sekarang di-bind `127.0.0.1:8080:8080`
-     (bukan `0.0.0.0`) — tidak reachable dari luar mesin ini sama sekali, terlepas dari IP
-     allowlist di atas. Akses remote lewat SSH tunnel: `ssh -L 8080:localhost:8080 <host>`.
+  3. Dashboard Traefik **sekarang publik** di subdomain `traefik.production.umjambi.ac.id`
+     (lihat "Dashboard Traefik — Publik" di bawah) — bukan lagi loopback-only. `api.insecure`
+     di `traefik.yml` sudah dimatikan; dashboard diekspos lewat router eksplisit
+     (`traefik-dashboard` di `dynamic/routers.yml`, Host-based) yang dilindungi
+     `cloudflare-ips` + `dashboard-auth` (BasicAuth).
 - **Belum dikerjakan** (urutan prioritas untuk sebelum dipakai produksi/multi-tenant nyata):
   1. ~~Tidak ada TLS~~ — selesai, lihat poin "TLS/HTTPS sudah aktif" di atas. Satu-satunya sisa:
      ganti sertifikat placeholder dengan Cloudflare Origin CA asli sebelum expose ke internet.
   2. Access token (JWT) masih tidak bisa di-revoke sebelum expired 15 menit — yang sudah
      bisa di-revoke cuma refresh token. Kalau butuh revoke access token instan, harus pindah
      ke pola introspeksi per-request (lebih lambat) atau token blocklist di Redis.
-  3. ~~Traefik dashboard tanpa auth~~ — selesai (di-bind ke loopback, lihat "Hardening produksi
-     Cloudflare" di atas). Kalau suatu saat butuh dashboard reachable dari luar tanpa SSH
-     tunnel, tambahkan `BasicAuth` middleware + expose lewat router eksplisit, jangan buka
-     `api.insecure` ke publik.
+  3. ~~Traefik dashboard tanpa auth~~ — selesai, dan sekarang **sudah publik** dengan BasicAuth
+     di depannya (lihat "Dashboard Traefik — Publik" di bawah). Kredensial BasicAuth di-generate
+     random sekali, kalau perlu diganti/rotasi: `htpasswd -nbB <user> <password-baru>`, ganti
+     hash di `traefik/dynamic/middlewares.yml` (middleware `dashboard-auth`), lalu
+     `docker compose up -d` (dari `traefik/`) untuk reload dynamic config.
   4. JWT pakai HS256 (secret simetris) — aman selama hanya `auth-service` yang verifikasi;
      kalau nanti ada verifier lain (mis. plugin JWT di Traefik), pertimbangkan RS256/ES256.
   5. CRUD client sekarang bisa lewat CLI (`./auth-service/manage-client.sh`, lihat di atas), tapi belum ada
@@ -430,6 +433,41 @@ benar-benar production-ready di VPS:
    di luar `IPAllowList` Traefik yang sudah jalan di layer aplikasi (poin 2 "Hardening produksi
    Cloudflare" di atas), jadi origin tetap terlindung meski suatu saat ada bug/bypass di layer
    Traefik.
+
+### Dashboard Traefik — Publik
+
+Dashboard diekspos lewat subdomain sendiri, **bukan** path di domain utama — kalau dipasang di
+path (`/dashboard`, `/api`) pada `production.umjambi.ac.id`, akan bentrok dengan
+`PathPrefix(/api/*)` yang dipakai semua router service bisnis (Traefik menentukan prioritas
+rule dari panjang string rule, bukan spesifisitas path, jadi rawan salah-rute request bisnis).
+Host-based di subdomain terpisah menghindari bentrok itu sama sekali.
+
+**Setup**:
+1. `traefik/traefik.yml` — `api.insecure` **dimatikan** (bukan `true` lagi). Dashboard/API
+   internal Traefik (`api@internal`) cuma bisa diakses lewat router eksplisit yang
+   didefinisikan sendiri, tidak ada lagi endpoint `:8080` tanpa auth.
+2. `traefik/dynamic/routers.yml` — router `traefik-dashboard`, rule
+   `Host(\`traefik.production.umjambi.ac.id\`)`, entrypoint `websecure`, middleware
+   `cloudflare-ips` (IP harus dari Cloudflare/loopback) + `dashboard-auth` (BasicAuth),
+   service `api@internal`.
+3. `traefik/dynamic/middlewares.yml` — middleware `dashboard-auth` (`basicAuth`), password
+   di-generate random sekali (`htpasswd -nbB admin <password>`), di-hash bcrypt. **Plaintext
+   password cuma ditampilkan sekali ke operator saat dibuat** — kalau lupa/perlu rotasi,
+   generate ulang (lihat poin 3 di "Belum dikerjakan" bagian atas), jangan coba decode hash-nya.
+4. `traefik/docker-compose.yml` — port `8080` **tidak di-publish lagi** (dulu loopback-only
+   buat SSH tunnel, sekarang tidak relevan karena `api.insecure` off).
+
+**Prasyarat sebelum dashboard bisa diakses**:
+- **DNS**: tambahkan A record `traefik.production.umjambi.ac.id` di Cloudflare, status
+  **proxied** (awan oranye), menunjuk ke IP VPS yang sama dengan domain utama.
+- **Sertifikat**: origin cert (`traefik/certs/cloudflare-origin.pem`) harus mencakup subdomain
+  ini — kalau cert-nya wildcard (`*.umjambi.ac.id`), otomatis sudah cukup tanpa perlu generate
+  ulang; kalau cert cuma untuk `production.umjambi.ac.id` spesifik, generate ulang Origin
+  Certificate di Cloudflare yang mencakup subdomain ini juga (lihat "Cara generate Cloudflare
+  Origin CA Certificate" di atas).
+
+Setelah DNS+cert siap, akses di `https://traefik.production.umjambi.ac.id/dashboard/` (perlu
+trailing slash), login pakai kredensial BasicAuth di atas.
 
 ## Kapasitas Database
 
@@ -614,8 +652,16 @@ for project X" begitu ada lebih dari satu compose project yang memakainya.
 Gateway di `https://localhost:8443` (HTTPS, entrypoint `websecure` — bukan port 443 langsung
 karena port 443 host dipakai Laravel Herd; `http://localhost:8081` sekarang cuma redirect ke
 situ). Testing lokal butuh `-k`/`--insecure` selama sertifikat masih placeholder self-signed —
-lihat bagian "TLS / SSL (Cloudflare)" di atas. Dashboard Traefik (dev-only, tanpa auth):
-`http://localhost:8080/dashboard/`.
+lihat bagian "TLS / SSL (Cloudflare)" di atas. Dashboard Traefik: publik di
+`https://traefik.production.umjambi.ac.id/dashboard/` (BasicAuth, lihat "Dashboard Traefik —
+Publik" di atas) — `api.insecure` sudah dimatikan sepenuhnya jadi tidak ada lagi endpoint
+tanpa auth di port manapun. Di mesin dev lokal tanpa DNS subdomain itu, tetap bisa diakses
+lewat entrypoint `websecure` lokal dengan Host header di-spoof manual (lolos `cloudflare-ips`
+karena loopback diizinkan):
+```bash
+curl -k -u admin:<password> -H "Host: traefik.production.umjambi.ac.id" \
+  https://localhost:8443/dashboard/
+```
 
 Demo client di-seed lewat `auth-service/db/init.sql` (hanya jalan otomatis kalau volume
 `mariadb_data` masih kosong / first run):

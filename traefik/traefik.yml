@@ -54,7 +54,9 @@ providers:
 
 api:
   dashboard: true
-  insecure: true # dev/demo only — jangan pakai di production tanpa auth di depan dashboard
+  # insecure sengaja TIDAK diaktifkan — dashboard diekspos lewat router eksplisit
+  # (traefik-dashboard di dynamic/routers.yml) yang dilindungi cloudflare-ips + BasicAuth
+  # (dashboard-auth di dynamic/middlewares.yml), bukan endpoint :8080 tanpa auth.
 
 log:
   level: INFO
