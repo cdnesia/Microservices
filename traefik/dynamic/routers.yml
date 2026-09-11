@@ -34,12 +34,14 @@ http:
       service: auth-service
 
     # Semua request ke service bisnis wajib lewat gateway-chain (rate-limit, headers,
-    # auth+scope). Tiap router scoped ke prefix-nya sendiri di bawah /api/* — supaya tiap
+    # auth+scope). Tiap router scoped ke prefix-nya sendiri di bawah /api/v1/* — supaya tiap
     # router eksplisit menangani prefix-nya sendiri, tidak mengandalkan urutan prioritas
     # implisit Traefik (yang sebenarnya tetap benar otomatis lewat rule-specificity, tapi
-    # eksplisit lebih jelas dibaca).
+    # eksplisit lebih jelas dibaca). "v1" SENGAJA tidak dipakai untuk /oauth/* (auth-token di
+    # atas) — auth-service adalah control plane terpisah, bukan bagian dari versioning API
+    # bisnis ini.
     service-ruangan:
-      rule: "PathPrefix(`/api/ruangan`)"
+      rule: "PathPrefix(`/api/v1/ruangan`)"
       entryPoints:
         - websecure
       tls: {}
@@ -48,7 +50,7 @@ http:
       service: service-ruangan
 
     service-pegawai:
-      rule: "PathPrefix(`/api/pegawai`)"
+      rule: "PathPrefix(`/api/v1/pegawai`)"
       entryPoints:
         - websecure
       tls: {}
@@ -57,7 +59,7 @@ http:
       service: service-pegawai
 
     service-bipot:
-      rule: "PathPrefix(`/api/bipot`)"
+      rule: "PathPrefix(`/api/v1/bipot`)"
       entryPoints:
         - websecure
       tls: {}
@@ -66,7 +68,7 @@ http:
       service: service-bipot
 
     service-jadwal:
-      rule: "PathPrefix(`/api/jadwal`)"
+      rule: "PathPrefix(`/api/v1/jadwal`)"
       entryPoints:
         - websecure
       tls: {}
@@ -75,7 +77,7 @@ http:
       service: service-jadwal
 
     service-khs:
-      rule: "PathPrefix(`/api/khs`)"
+      rule: "PathPrefix(`/api/v1/khs`)"
       entryPoints:
         - websecure
       tls: {}
@@ -84,7 +86,7 @@ http:
       service: service-khs
 
     service-tagihan:
-      rule: "PathPrefix(`/api/tagihan`)"
+      rule: "PathPrefix(`/api/v1/tagihan`)"
       entryPoints:
         - websecure
       tls: {}
@@ -93,7 +95,7 @@ http:
       service: service-tagihan
 
     service-telegram:
-      rule: "PathPrefix(`/api/telegram`)"
+      rule: "PathPrefix(`/api/v1/telegram`)"
       entryPoints:
         - websecure
       tls: {}

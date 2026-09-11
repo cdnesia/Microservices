@@ -42,6 +42,19 @@ end-to-end):
   end-to-end** karena butuh kredensial produksi/staging asli yang belum ada di `.env`
   masing-masing (lihat tabel & catatan di bawah).
 - **Rate limit per-client** di gateway (bukan per-IP) — lihat bagian Middleware di bawah.
+- **API versioning `/api/v1/*`** — semua route service bisnis lewat gateway sekarang diawali
+  `/api/v1/` (mis. `/api/v1/ruangan/list`, bukan `/api/ruangan/list` lagi). **`/oauth/*` SENGAJA
+  dikecualikan** (tetap tanpa versi) — auth-service adalah control plane terpisah, bukan bagian
+  dari API bisnis yang di-versioning ini. Tiga tempat yang saling terkait dan harus tetap
+  sinkron kalau versi berubah lagi ke depan (`v2`, dst.): `PathPrefix` di
+  `traefik/dynamic/routers.yml` (satu per service bisnis), `stripPrefix` di
+  `traefik/dynamic/middlewares.yml` (middleware `strip-api-prefix`, supaya backend tetap
+  terima path yang sama seperti sebelumnya tanpa perlu ubah kode service manapun), dan
+  `gatewayPrefix` di `auth-service/src/config/services.js` (dipakai `/verify` untuk
+  scope-matching berdasarkan `X-Forwarded-Uri` — lihat `auth-service/src/scopeRegistry.js`).
+  Kode di dalam tiap service bisnis (`src/index.js`) **tidak berubah sama sekali** — mereka
+  tetap expose route tanpa prefix apa pun (mis. `/ruangan/list`), semua prefix-handling terjadi
+  di gateway.
 - **Sembilan compose file terpisah, satu per folder** (`traefik/`, `auth-service/`, dan satu
   per `services/*/` — tidak ada `docker-compose.yml` di root sama sekali). `traefik/` dan
   `auth-service/` di-pin `name: gateway` yang **sama** supaya di Docker Desktop tetap kebaca
@@ -243,7 +256,9 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
   dan dari database yang sedang jalan), scope `orders:read`/`orders:write` (dihapus dari tabel
   `scopes` dan dari `allowed_scopes` kedua demo client — diganti scope dari 7 service bisnis
   yang masih ada), serta folder "2. Service A" dan referensi `/api/orders` di Postman
-  collection (dipindah ke `/api/ruangan/list` sebagai target uji rate-limit & negative test).
+  collection (dipindah ke `/api/v1/ruangan/list` sebagai target uji rate-limit & negative
+  test — path-nya sendiri belakangan diberi prefix versi `/v1`, lihat "Status Implementasi"
+  poin tentang API versioning).
   `service-ruangan` sekarang jadi contoh referensi paling sederhana kalau mau lihat pola dasar
   sebuah service (lihat "Struktur Folder" di bawah).
 - **TLS/HTTPS sudah aktif** (sesi ini) — entrypoint `websecure` (443, host `8443`) + sertifikat
@@ -400,7 +415,7 @@ Newman/curl ke `https://localhost:8443` akan menolak sertifikat placeholder seba
 (itu ekspektasi normal untuk self-signed) — pakai `--insecure`/`-k` selama masih placeholder:
 ```bash
 npx newman run postman/Microcervices-Gateway.postman_collection.json --insecure
-curl -k https://localhost:8443/api/ruangan/list -H "Authorization: Bearer <access_token>"
+curl -k https://localhost:8443/api/v1/ruangan/list -H "Authorization: Bearer <access_token>"
 ```
 Begitu sertifikat Cloudflare Origin CA asli terpasang, flag `-k`/`--insecure` tetap dibutuhkan
 untuk testing **langsung dari mesin lokal** (root CA Cloudflare Origin tidak otomatis ada di
@@ -440,7 +455,7 @@ benar-benar production-ready di VPS:
 
 Dashboard diekspos lewat subdomain sendiri, **bukan** path di domain utama — kalau dipasang di
 path (`/dashboard`, `/api`) pada `production.umjambi.ac.id`, akan bentrok dengan
-`PathPrefix(/api/*)` yang dipakai semua router service bisnis (Traefik menentukan prioritas
+`PathPrefix(/api/v1/*)` yang dipakai semua router service bisnis (Traefik menentukan prioritas
 rule dari panjang string rule, bukan spesifisitas path, jadi rawan salah-rute request bisnis).
 Host-based di subdomain terpisah menghindari bentrok itu sama sekali.
 
@@ -706,7 +721,7 @@ curl -k -X POST https://localhost:8443/oauth/token \
 # 2. Pakai access_token ke salah satu service bisnis lewat gateway (contoh: service-ruangan —
 # butuh DATABASE_URL_SIADE_OLD asli di services/service-ruangan/.env supaya balas 200 dengan
 # data sungguhan, kalau belum tetap lolos gateway tapi service sendiri balas 500)
-curl -k https://localhost:8443/api/ruangan/list -H "Authorization: Bearer <access_token>"
+curl -k https://localhost:8443/api/v1/ruangan/list -H "Authorization: Bearer <access_token>"
 
 # 3. Tukar refresh_token jadi access_token baru (refresh_token lama otomatis di-revoke/rotasi)
 curl -k -X POST https://localhost:8443/oauth/token \
@@ -736,7 +751,8 @@ bisnis yang sudah ada — `service-ruangan` yang paling sederhana (1 DB eksterna
    scope, description }] }`. **Tidak perlu edit apa pun di `auth-service`** untuk
    mendaftarkan scope — auto-discovered.
 3. Daftarkan service itu di `auth-service/src/config/services.js` (`name`, `baseUrl`,
-   `gatewayPrefix` — harus sama dengan prefix router-nya di Traefik). Ini SATU-SATUNYA
+   `gatewayPrefix` — harus sama dengan prefix router-nya di Traefik, sekarang `/api/v1` untuk
+   semua service bisnis, lihat "Status Implementasi" poin API versioning). Ini SATU-SATUNYA
    tempat di `auth-service` yang perlu disentuh untuk service baru.
 4. Tambahkan router+service baru di `traefik/dynamic/routers.yml` dengan middleware
    `gateway-chain`.

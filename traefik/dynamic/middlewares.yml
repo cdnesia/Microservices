@@ -94,10 +94,12 @@ http:
         sourceCriterion:
           requestHeaderName: "X-Client-Id"
 
+    # "/api/v1" (bukan cuma "/api") supaya backend tetap terima path yang sama seperti
+    # sebelumnya (mis. "/ruangan/list") tanpa perlu ubah kode service manapun.
     strip-api-prefix:
       stripPrefix:
         prefixes:
-          - "/api"
+          - "/api/v1"
 
     # Proteksi dashboard Traefik (router terpisah di routers.yml, Host-based di subdomain
     # sendiri supaya tidak bentrok dengan PathPrefix(/api/*) punya service bisnis). Password
