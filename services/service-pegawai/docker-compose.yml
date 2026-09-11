@@ -16,6 +16,7 @@ networks:
 services:
   service-pegawai:
     build: .
+    container_name: service-pegawai
     environment:
       DATABASE_URL_SIADE_OLD: ${DATABASE_URL_SIADE_OLD}
       PORT: 5000

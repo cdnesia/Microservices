@@ -17,6 +17,7 @@ networks:
 services:
   service-khs:
     build: .
+    container_name: service-khs
     environment:
       DATABASE_URL_SIADE: ${DATABASE_URL_SIADE}
       DATABASE_URL_SIADE_OLD: ${DATABASE_URL_SIADE_OLD}

@@ -16,6 +16,7 @@ networks:
 services:
   service-bipot:
     build: .
+    container_name: service-bipot
     environment:
       DATABASE_URL_SIMAKU: ${DATABASE_URL_SIMAKU}
       DATABASE_URL_SIADE: ${DATABASE_URL_SIADE}

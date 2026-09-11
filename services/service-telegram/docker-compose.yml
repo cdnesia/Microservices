@@ -15,6 +15,7 @@ networks:
 services:
   service-telegram:
     build: .
+    container_name: service-telegram
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_DEFAULT_CHAT_ID: ${TELEGRAM_DEFAULT_CHAT_ID}

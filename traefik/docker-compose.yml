@@ -22,6 +22,7 @@ networks:
 services:
   traefik:
     image: traefik:v3.7
+    container_name: gateway-traefik
     command:
       - "--configFile=/etc/traefik/traefik.yml"
     ports:

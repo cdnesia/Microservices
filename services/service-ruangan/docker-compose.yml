@@ -16,6 +16,7 @@ networks:
 services:
   service-ruangan:
     build: .
+    container_name: service-ruangan
     environment:
       DATABASE_URL_SIADE_OLD: ${DATABASE_URL_SIADE_OLD}
       PORT: 5000

@@ -16,6 +16,7 @@ networks:
 services:
   service-tagihan:
     build: .
+    container_name: service-tagihan
     environment:
       DATABASE_URL_PAYMENT: ${DATABASE_URL_PAYMENT}
       DATABASE_URL_SIADE: ${DATABASE_URL_SIADE}
