@@ -1,11 +1,8 @@
--- TIDAK LAGI auto-run oleh docker-entrypoint-initdb.d — itu cuma berlaku untuk container
--- mariadb yang dibundle compose ini sendiri, dan compose ini sekarang connect ke instance
--- mariadb eksternal yang sudah ada & dikelola terpisah (lihat auth-service/docker-compose.yml
--- dan CLAUDE.md bagian "Database Eksternal (MariaDB Bersama)"). Jalankan isi file ini MANUAL
--- satu kali lewat `docker exec -i mariadb mysql -u root -p gateway_auth < init.sql` (atau
--- tempel isinya ke client mysql) setelah database/user dibuat di instance itu.
---
--- Untuk perubahan schema setelah itu, jalankan migrasi manual / tool migrasi terpisah.
+-- AUTO-RUN oleh docker-entrypoint-initdb.d saat container `mariadb` (lihat
+-- auth-service/docker-compose.yml) start dengan volume `mariadb_data` masih kosong (first
+-- run) — tidak perlu dijalankan manual lagi. Kalau volume itu sudah ada isinya (bukan first
+-- run), file ini TIDAK dieksekusi ulang; untuk perubahan schema setelah itu, jalankan migrasi
+-- manual / tool migrasi terpisah lewat `docker compose exec mariadb mariadb -u root -p ...`.
 --
 -- allowed_scopes & refresh_tokens.scopes disimpan sebagai TEXT comma-separated, bukan array
 -- (MariaDB tidak punya tipe array seperti Postgres) — di-parse jadi array di layer JS
