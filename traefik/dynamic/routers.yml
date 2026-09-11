@@ -2,10 +2,16 @@ http:
   routers:
     # Dashboard Traefik — Host-based di subdomain sendiri (BUKAN path di domain utama) supaya
     # tidak bentrok dengan PathPrefix(/api/*) punya service bisnis di bawah. Butuh DNS A record
-    # untuk subdomain ini di Cloudflare (proxied) menunjuk ke IP VPS yang sama, dan sertifikat
-    # origin (traefik/certs/) yang mencakup subdomain ini (wildcard *.umjambi.ac.id sudah cukup).
+    # untuk subdomain ini di Cloudflare (proxied) menunjuk ke IP VPS yang sama.
+    #
+    # SENGAJA "traefik.umjambi.ac.id" (satu level, sejajar dengan "production"), BUKAN
+    # "traefik.production.umjambi.ac.id" (dua level) — wildcard cert *.umjambi.ac.id cuma
+    # mencakup satu level subdomain (aturan TLS SNI standar), jadi dua-level akan selalu
+    # cert-mismatch walau cert-nya wildcard. Kalau nanti mau tetap pakai bentuk
+    # "traefik.production.umjambi.ac.id", generate Origin Certificate baru yang eksplisit
+    # mencakup "*.production.umjambi.ac.id".
     traefik-dashboard:
-      rule: "Host(`traefik.production.umjambi.ac.id`)"
+      rule: "Host(`traefik.umjambi.ac.id`)"
       entryPoints:
         - websecure
       tls: {}

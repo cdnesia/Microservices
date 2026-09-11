@@ -272,7 +272,7 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
      `ClientAddr`/`ClientHost` di access log Traefik setelah live, harus IP visitor asli bukan
      IP edge Cloudflare, dan uji rate-limit-ip dengan 2 visitor beda IP lewat Cloudflare tidak
      saling mempengaruhi kuota.
-  3. Dashboard Traefik **sekarang publik** di subdomain `traefik.production.umjambi.ac.id`
+  3. Dashboard Traefik **sekarang publik** di subdomain `traefik.umjambi.ac.id`
      (lihat "Dashboard Traefik — Publik" di bawah) — bukan lagi loopback-only. `api.insecure`
      di `traefik.yml` sudah dimatikan; dashboard diekspos lewat router eksplisit
      (`traefik-dashboard` di `dynamic/routers.yml`, Host-based) yang dilindungi
@@ -447,7 +447,7 @@ Host-based di subdomain terpisah menghindari bentrok itu sama sekali.
    internal Traefik (`api@internal`) cuma bisa diakses lewat router eksplisit yang
    didefinisikan sendiri, tidak ada lagi endpoint `:8080` tanpa auth.
 2. `traefik/dynamic/routers.yml` — router `traefik-dashboard`, rule
-   `Host(\`traefik.production.umjambi.ac.id\`)`, entrypoint `websecure`, middleware
+   `Host(\`traefik.umjambi.ac.id\`)`, entrypoint `websecure`, middleware
    `cloudflare-ips` (IP harus dari Cloudflare/loopback) + `dashboard-auth` (BasicAuth),
    service `api@internal`.
 3. `traefik/dynamic/middlewares.yml` — middleware `dashboard-auth` (`basicAuth`), password
@@ -458,7 +458,7 @@ Host-based di subdomain terpisah menghindari bentrok itu sama sekali.
    buat SSH tunnel, sekarang tidak relevan karena `api.insecure` off).
 
 **Prasyarat sebelum dashboard bisa diakses**:
-- **DNS**: tambahkan A record `traefik.production.umjambi.ac.id` di Cloudflare, status
+- **DNS**: tambahkan A record `traefik.umjambi.ac.id` di Cloudflare, status
   **proxied** (awan oranye), menunjuk ke IP VPS yang sama dengan domain utama.
 - **Sertifikat**: origin cert (`traefik/certs/cloudflare-origin.pem`) harus mencakup subdomain
   ini — kalau cert-nya wildcard (`*.umjambi.ac.id`), otomatis sudah cukup tanpa perlu generate
@@ -466,7 +466,7 @@ Host-based di subdomain terpisah menghindari bentrok itu sama sekali.
   Certificate di Cloudflare yang mencakup subdomain ini juga (lihat "Cara generate Cloudflare
   Origin CA Certificate" di atas).
 
-Setelah DNS+cert siap, akses di `https://traefik.production.umjambi.ac.id/dashboard/` (perlu
+Setelah DNS+cert siap, akses di `https://traefik.umjambi.ac.id/dashboard/` (perlu
 trailing slash), login pakai kredensial BasicAuth di atas.
 
 ## Kapasitas Database
@@ -653,13 +653,13 @@ Gateway di `https://localhost:8443` (HTTPS, entrypoint `websecure` — bukan por
 karena port 443 host dipakai Laravel Herd; `http://localhost:8081` sekarang cuma redirect ke
 situ). Testing lokal butuh `-k`/`--insecure` selama sertifikat masih placeholder self-signed —
 lihat bagian "TLS / SSL (Cloudflare)" di atas. Dashboard Traefik: publik di
-`https://traefik.production.umjambi.ac.id/dashboard/` (BasicAuth, lihat "Dashboard Traefik —
+`https://traefik.umjambi.ac.id/dashboard/` (BasicAuth, lihat "Dashboard Traefik —
 Publik" di atas) — `api.insecure` sudah dimatikan sepenuhnya jadi tidak ada lagi endpoint
 tanpa auth di port manapun. Di mesin dev lokal tanpa DNS subdomain itu, tetap bisa diakses
 lewat entrypoint `websecure` lokal dengan Host header di-spoof manual (lolos `cloudflare-ips`
 karena loopback diizinkan):
 ```bash
-curl -k -u admin:<password> -H "Host: traefik.production.umjambi.ac.id" \
+curl -k -u admin:<password> -H "Host: traefik.umjambi.ac.id" \
   https://localhost:8443/dashboard/
 ```
 
