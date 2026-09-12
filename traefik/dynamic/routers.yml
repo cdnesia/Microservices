@@ -40,6 +40,73 @@ http:
     # eksplisit lebih jelas dibaca). "v1" SENGAJA tidak dipakai untuk /oauth/* (auth-token di
     # atas) — auth-service adalah control plane terpisah, bukan bagian dari versioning API
     # bisnis ini.
+    # Health check PUBLIK per service, TANPA token — dipakai monitoring eksternal/uptime
+    # checker. "Path" exact match lebih spesifik daripada "PathPrefix" milik router bisnis di
+    # bawah, jadi otomatis diprioritaskan Traefik (rule-specificity), tanpa perlu "priority:"
+    # eksplisit. Lihat health-chain & health-rewrite di middlewares.yml.
+    service-ruangan-health:
+      rule: "Path(`/api/v1/ruangan/health`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - health-chain
+      service: service-ruangan
+
+    service-pegawai-health:
+      rule: "Path(`/api/v1/pegawai/health`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - health-chain
+      service: service-pegawai
+
+    service-bipot-health:
+      rule: "Path(`/api/v1/bipot/health`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - health-chain
+      service: service-bipot
+
+    service-jadwal-health:
+      rule: "Path(`/api/v1/jadwal/health`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - health-chain
+      service: service-jadwal
+
+    service-khs-health:
+      rule: "Path(`/api/v1/khs/health`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - health-chain
+      service: service-khs
+
+    service-tagihan-health:
+      rule: "Path(`/api/v1/tagihan/health`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - health-chain
+      service: service-tagihan
+
+    service-telegram-health:
+      rule: "Path(`/api/v1/telegram/health`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - health-chain
+      service: service-telegram
+
     service-ruangan:
       rule: "PathPrefix(`/api/v1/ruangan`)"
       entryPoints:

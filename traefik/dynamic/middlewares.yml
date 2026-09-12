@@ -36,12 +36,19 @@ http:
           # ┌─ DEV-ONLY — HAPUS BARIS INI SEBELUM DEPLOY KE VPS (lihat checklist di CLAUDE.md
           # │  bagian "TLS / SSL (Cloudflare)" -> "Checklist pindah ke VPS") ─────────────────
           # │ Docker Desktop (Mac/Windows) TIDAK meneruskan 127.0.0.1 asli dari host ke
-          # │ container — traffic host->published-port terlihat datang dari gateway VM-nya
-          # │ sendiri (di mesin dev ini: 192.168.65.1). Tanpa baris ini, curl/newman langsung
-          # │ ke localhost:8443 dari Mac ini akan ke-block (403) meski secara logis "dari
+          # │ container — traffic host->published-port terlihat datang dari gateway subnet
+          # │ docker-nya sendiri, BUKAN dari 127.0.0.1. Nilainya ikut subnet network
+          # │ `gateway-net` di mesin masing-masing (cek: `docker network inspect gateway-net`,
+          # │ lihat field IPAM.Config.Subnet) — di mesin dev ini ternyata 172.18.0.0/16 (BUKAN
+          # │ 192.168.65.0/24 seperti catatan lama, subnet bisa beda tiap kali network dibuat
+          # │ ulang). PENTING: file ini di-parse Traefik file provider sebagai Go template,
+          # │ JANGAN taruh literal tanda kurung-kurawal-ganda di komentar mana pun di file
+          # │ ini — akan bikin seluruh dynamic config gagal load (pernah kejadian di sesi ini).
+          # │ Tanpa baris subnet ini, curl/newman langsung ke
+          # │ localhost:8443 dari Mac ini akan ke-block (403) meski secara logis "dari
           # │ localhost". Di VPS (Docker Engine native, bukan Docker Desktop) baris ini TIDAK
           # │ dibutuhkan sama sekali — 127.0.0.1/::1 di atas sudah cukup.
-          - "192.168.65.0/24"
+          - "172.18.0.0/16"
           # └────────────────────────────────────────────────────────────────────────────────
 
     # Lapis 1: proteksi kasar per-IP, jalan SEBELUM auth supaya request yang belum
@@ -122,3 +129,22 @@ http:
           - auth-scope
           - rate-limit-client
           - strip-api-prefix
+
+    # Rewrite "/api/v1/<service>/health" -> "/health" supaya backend tetap terima path polos
+    # yang sama seperti healthcheck internal Docker-nya, tanpa perlu ubah kode service manapun.
+    health-rewrite:
+      replacePathRegex:
+        regex: "^/api/v1/[a-z0-9-]+/health$"
+        replacement: "/health"
+
+    # Chain khusus health check PUBLIK — sengaja TANPA auth-scope (harus bisa diakses tanpa
+    # token untuk dipakai monitoring eksternal/uptime checker) dan TANPA rate-limit-client
+    # (tidak ada X-Client-Id tanpa auth). Tetap dilindungi cloudflare-ips + rate-limit-ip +
+    # secure-headers — pola sama seperti /oauth/token yang juga publik tanpa token.
+    health-chain:
+      chain:
+        middlewares:
+          - cloudflare-ips
+          - rate-limit-ip
+          - secure-headers
+          - health-rewrite
