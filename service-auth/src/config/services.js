@@ -1,4 +1,4 @@
-// Daftar service yang scope-nya di-discover otomatis oleh auth-service, supaya
+// Daftar service yang scope-nya di-discover otomatis oleh service-auth, supaya
 // mapping route -> scope tidak perlu ditulis ulang manual di sini setiap ada service baru.
 // gatewayPrefix HARUS sama dengan PathPrefix router + stripPrefix di
 // traefik/dynamic/routers.yml & middlewares.yml, karena itu yang menentukan path

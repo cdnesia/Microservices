@@ -31,8 +31,8 @@ app.get('/health', async (req, res) => {
     .json({ success: allUp, message: allUp ? 'ok' : 'degraded', data: { databases } });
 });
 
-// Manifest scope milik service ini — di-poll langsung oleh auth-service (internal network,
-// tidak lewat Traefik) supaya auth-service tidak perlu ada daftar route->scope manual yang
+// Manifest scope milik service ini — di-poll langsung oleh service-auth (internal network,
+// tidak lewat Traefik) supaya service-auth tidak perlu ada daftar route->scope manual yang
 // harus disinkronkan tiap kali endpoint di service ini berubah.
 app.get('/scopes', (req, res) => {
   res.json({
@@ -44,7 +44,7 @@ app.get('/scopes', (req, res) => {
 });
 
 // Defense in depth: tolak request yang tidak lewat gateway (tidak ada X-Client-Id
-// dari auth-service). Scope-check sesungguhnya sudah dilakukan di Traefik/auth-service.
+// dari service-auth). Scope-check sesungguhnya sudah dilakukan di Traefik/service-auth.
 app.use((req, res, next) => {
   if (!req.headers['x-client-id']) {
     return ApiResponse.error(res, {

@@ -1,10 +1,10 @@
-# MariaDB 10.6 milik auth-service, DIPISAH dari auth-service/docker-compose.yml (sebelumnya
-# dibundle di situ) — supaya restart/rebuild auth-service (mis. lewat auth-service/restart.sh
+# MariaDB 10.6 milik service-auth, DIPISAH dari service-auth/docker-compose.yml (sebelumnya
+# dibundle di situ) — supaya restart/rebuild service-auth (mis. lewat service-auth/restart.sh
 # setelah ada perubahan kode) TIDAK ikut me-restart database ini. Compose file ini berdiri
-# sendiri, project name TETAP "gateway" (sama seperti traefik/ & auth-service/) supaya di
+# sendiri, project name TETAP "gateway" (sama seperti traefik/ & service-auth/) supaya di
 # Docker Desktop tetap kebaca satu grup — tapi bisa di-up/down/restart independen.
 #
-# PENTING kalau migrasi dari setup lama (mariadb dulu ada di auth-service/docker-compose.yml):
+# PENTING kalau migrasi dari setup lama (mariadb dulu ada di service-auth/docker-compose.yml):
 # volume `mariadb_data` di bawah SENGAJA di-set `external: true` dengan nama eksplisit
 # `gateway_mariadb_data` — itu nama volume yang otomatis dibuat Docker Compose dulu (pola
 # "<project>_<volume_key>", project-nya "gateway"). Dengan `external: true` + nama yang sama
@@ -19,9 +19,9 @@
 # migrasi manual, bukan andalkan auto-run ini lagi.
 #
 # Jalankan: cp .env.example .env (isi DB_USER/DB_PASSWORD/DB_NAME — HARUS SAMA PERSIS dengan
-# yang diisi di auth-service/.env, karena dua compose project ini terpisah tapi mengacu ke
+# yang diisi di service-auth/.env, karena dua compose project ini terpisah tapi mengacu ke
 # kredensial yang sama), lalu docker compose up -d (dari folder ini). Jalankan SEBELUM
-# auth-service/docker-compose.yml.
+# service-auth/docker-compose.yml.
 
 name: gateway
 

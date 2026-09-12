@@ -1,16 +1,16 @@
 # Traefik — proxy stateless murni, tidak punya data, jadi compose-nya sendiri di sini
-# (bukan lagi di root) — konsisten dengan auth-service/, mariadb/, dan tiap folder
+# (bukan lagi di root) — konsisten dengan service-auth/, mariadb/, dan tiap folder
 # service-* di root (service-ruangan/, service-pegawai/, dst., dulu ada di services/<nama>/,
 # sudah dipindah ke top-level): tiap bagian punya compose sendiri di folder-nya masing-masing.
 #
-# `name: gateway` disamakan dengan auth-service/docker-compose.yml SENGAJA — supaya di
+# `name: gateway` disamakan dengan service-auth/docker-compose.yml SENGAJA — supaya di
 # Docker Desktop kedua compose project ini tetap kebaca sebagai satu grup "gateway", walau
 # dijalankan dari dua `docker compose up -d` terpisah. Konsekuensinya: `docker compose down`
 # dari salah satu folder cuma mematikan service yang didefinisikan di compose file itu saja
 # (compose akan warning "orphan containers" untuk service dari compose file "gateway"
 # satunya — bukan error, cukup abaikan, atau matikan dari kedua folder kalau mau stop total).
 #
-# Jalankan: docker compose up -d (dari folder ini) — SETELAH auth-service/docker-compose.yml
+# Jalankan: docker compose up -d (dari folder ini) — SETELAH service-auth/docker-compose.yml
 # sudah up, walau traefik sendiri tetap retry per request kalau backend belum siap.
 
 name: gateway
@@ -44,6 +44,6 @@ services:
     networks:
       - gateway-net
     restart: unless-stopped
-    # Tidak depends_on auth-service atau service-a — keduanya stack terpisah yang bisa
+    # Tidak depends_on service-auth atau service-a — keduanya stack terpisah yang bisa
     # naik/turun sendiri. Traefik akan retry koneksi ke backend per-request kalau backend
     # belum up.

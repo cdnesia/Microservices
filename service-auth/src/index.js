@@ -55,7 +55,7 @@ async function start() {
   // Tunggu discovery pertama selesai dulu sebelum menerima traffic, supaya /verify
   // tidak deny-by-default semua request gara-gara map masih kosong saat baru boot.
   // Retry beberapa kali karena service lain (mis. service-a) mungkin belum siap
-  // tepat di detik yang sama saat auth-service boot.
+  // tepat di detik yang sama saat service-auth boot.
   for (let attempt = 1; attempt <= 15; attempt += 1) {
     await discoverScopes();
     if (getRouteScopeMap().length > 0) break;
@@ -67,12 +67,12 @@ async function start() {
   }, SCOPE_REFRESH_INTERVAL_MS);
 
   app.listen(port, () => {
-    console.log(`auth-service listening on port ${port}`);
+    console.log(`service-auth listening on port ${port}`);
   });
 }
 
 start().catch((err) => {
-  console.error('Gagal start auth-service:', err);
+  console.error('Gagal start service-auth:', err);
   process.exit(1);
 });
 

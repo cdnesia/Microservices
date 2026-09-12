@@ -1,12 +1,12 @@
-# auth-service SAJA — mariadb (10.6) sekarang di compose TERPISAH (../mariadb/docker-compose.yml)
-# supaya restart/rebuild auth-service (mis. lewat restart.sh setelah ada perubahan kode) TIDAK
+# service-auth SAJA — mariadb (10.6) sekarang di compose TERPISAH (../mariadb/docker-compose.yml)
+# supaya restart/rebuild service-auth (mis. lewat restart.sh setelah ada perubahan kode) TIDAK
 # ikut me-restart database. Sebelumnya sempat dibundle di compose ini sendiri, lalu dipisah —
 # lihat git history & CLAUDE.md bagian "Migrasi mariadb ke compose terpisah" kalau butuh
 # konteks/riwayat lengkapnya.
 #
 # TIDAK ADA `depends_on` ke mariadb lagi (dua compose project terpisah, Docker Compose tidak
 # bisa depends_on lintas project) — pastikan `../mariadb/` sudah `docker compose up -d` dan
-# healthy DULU sebelum start auth-service ini, kalau tidak connect pertama akan gagal (app
+# healthy DULU sebelum start service-auth ini, kalau tidak connect pertama akan gagal (app
 # tidak auto-retry infinite, cek src/db/pool.js kalau perlu tambah retry logic nanti).
 #
 # DB_HOST default "mariadb-server" (container_name di ../mariadb/docker-compose.yml,
@@ -18,7 +18,7 @@
 # Jalankan: cp .env.example .env (isi JWT_SECRET + DB_USER/DB_PASSWORD — HARUS SAMA PERSIS
 # dengan yang diisi di ../mariadb/.env, DB_HOST/DB_NAME biarkan default), lalu
 # docker compose up -d --build (dari folder ini). Jalankan SETELAH ../mariadb/ up & healthy,
-# SEBELUM traefik/docker-compose.yml supaya auth-service sudah siap saat traefik mulai forward
+# SEBELUM traefik/docker-compose.yml supaya service-auth sudah siap saat traefik mulai forward
 # request.
 
 name: gateway
@@ -28,9 +28,9 @@ networks:
     external: true
 
 services:
-  auth-service:
+  service-auth:
     build: .
-    container_name: gateway-auth-service
+    container_name: gateway-service-auth
     environment:
       JWT_SECRET: ${JWT_SECRET}
       DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST:-mariadb-server}:${DB_PORT:-3306}/${DB_NAME:-gateway_auth}

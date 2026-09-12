@@ -11,31 +11,31 @@ end-to-end):
 - `traefik/` — static + dynamic config, dijalankan dari **`traefik/docker-compose.yml`**
   (cuma berisi service `traefik`, proxy stateless murni tanpa data — tidak lagi di root,
   root project sekarang tidak punya compose file sendiri).
-- `auth-service/` (Express + `mysql2`), compose sendiri di **`auth-service/docker-compose.yml`**
+- `service-auth/` (Express + `mysql2`), compose sendiri di **`service-auth/docker-compose.yml`**
   — **bundle container `mariadb:10.6` sendiri lagi** (`mariadb-server`, volume `mariadb_data`,
   `db/init.sql` auto-run lewat `docker-entrypoint-initdb.d` saat volume masih kosong). Sempat
   dipindah ke instance MariaDB eksternal bersama di VPS "biznet" (`10.50.0.1:3306` via
   WireGuard, lihat sisa catatan historisnya di "Database Eksternal (MariaDB Bersama)" di
   bawah) tapi **dikembalikan ke pola bundled** karena deployment VPS baru tidak selalu punya
-  konektivitas WireGuard ke instance itu, dan data auth-service (`clients`/`scopes`/
-  `refresh_tokens`) memang cuma dipakai auth-service sendiri — tidak ada alasan kuat taruh di
+  konektivitas WireGuard ke instance itu, dan data service-auth (`clients`/`scopes`/
+  `refresh_tokens`) memang cuma dipakai service-auth sendiri — tidak ada alasan kuat taruh di
   instance bersama. `DB_HOST` default `mariadb` (nama service, resolvable di `gateway-net`),
   bukan IP eksternal lagi. Database eksternal kampus (SIADE/SIMAKU/PAYMENT) yang dipakai 6
   service bisnis lain **tidak terpengaruh** perubahan ini, tetap eksternal seperti biasa —
-  lihat tabel "Service bisnis baru" di bawah. `auth-service` sendiri:
+  lihat tabel "Service bisnis baru" di bawah. `service-auth` sendiri:
   Client Credentials grant, **refresh token** (opaque, hash SHA-256 tersimpan di DB, rotasi
   tiap dipakai) + `/oauth/revoke`, dan **scope discovery**: auto-fetch manifest `/scopes` dari
-  service lain (lihat `auth-service/src/config/services.js`) tiap boot + tiap 60 detik,
+  service lain (lihat `service-auth/src/config/services.js`) tiap boot + tiap 60 detik,
   di-upsert ke tabel `scopes`, dipakai `/verify` untuk scope-check — jadi mapping route→scope
-  tidak perlu ditulis manual dua kali (sekali di service, sekali di auth-service). CRUD client
-  (create/rotate secret/ubah scope/suspend/hapus) lewat CLI `auth-service/manage-client.sh` —
+  tidak perlu ditulis manual dua kali (sekali di service, sekali di service-auth). CRUD client
+  (create/rotate secret/ubah scope/suspend/hapus) lewat CLI `service-auth/manage-client.sh` —
   lihat bawah.
 - **7 service bisnis**, hasil port dari `RESTFULL-API-EXPRESSJS` (project lama milik user —
   lihat "Kenapa MariaDB" di bawah untuk gaya catatan serupa, dan "Response Envelope" tepat di
   bawah ini untuk konteks porting-nya): `service-ruangan`, `service-pegawai`, `service-bipot`,
   `service-jadwal`, `service-khs`, `service-tagihan`, `service-telegram` — masing-masing
   folder top-level `<nama>/` sendiri (dulu di bawah `services/<nama>/`, sudah dipindah ke root
-  lewat `git mv` supaya sejajar dengan `auth-service/`/`mariadb/`/`traefik/`), compose sendiri
+  lewat `git mv` supaya sejajar dengan `service-auth/`/`mariadb/`/`traefik/`), compose sendiri
   (join `gateway-net` sebagai network eksternal),
   `GET /scopes`, guard `X-Client-Id`. `service-ruangan` adalah yang paling sederhana (1 DB
   eksternal, 1 route) — jadikan contoh kalau mau lihat pola dasarnya sebelum baca yang lain.
@@ -46,22 +46,22 @@ end-to-end):
 - **Rate limit per-client** di gateway (bukan per-IP) — lihat bagian Middleware di bawah.
 - **API versioning `/api/v1/*`** — semua route service bisnis lewat gateway sekarang diawali
   `/api/v1/` (mis. `/api/v1/ruangan/list`, bukan `/api/ruangan/list` lagi). **`/oauth/*` SENGAJA
-  dikecualikan** (tetap tanpa versi) — auth-service adalah control plane terpisah, bukan bagian
+  dikecualikan** (tetap tanpa versi) — service-auth adalah control plane terpisah, bukan bagian
   dari API bisnis yang di-versioning ini. Tiga tempat yang saling terkait dan harus tetap
   sinkron kalau versi berubah lagi ke depan (`v2`, dst.): `PathPrefix` di
   `traefik/dynamic/routers.yml` (satu per service bisnis), `stripPrefix` di
   `traefik/dynamic/middlewares.yml` (middleware `strip-api-prefix`, supaya backend tetap
   terima path yang sama seperti sebelumnya tanpa perlu ubah kode service manapun), dan
-  `gatewayPrefix` di `auth-service/src/config/services.js` (dipakai `/verify` untuk
-  scope-matching berdasarkan `X-Forwarded-Uri` — lihat `auth-service/src/scopeRegistry.js`).
+  `gatewayPrefix` di `service-auth/src/config/services.js` (dipakai `/verify` untuk
+  scope-matching berdasarkan `X-Forwarded-Uri` — lihat `service-auth/src/scopeRegistry.js`).
   Kode di dalam tiap service bisnis (`src/index.js`) **tidak berubah sama sekali** — mereka
   tetap expose route tanpa prefix apa pun (mis. `/ruangan/list`), semua prefix-handling terjadi
   di gateway.
-- **Sepuluh compose file terpisah, satu per folder** (`traefik/`, `auth-service/`, `mariadb/`,
+- **Sepuluh compose file terpisah, satu per folder** (`traefik/`, `service-auth/`, `mariadb/`,
   dan satu per folder `service-*` di root — ketujuh service bisnis dulu bernaung di bawah
   `services/<nama>/`, sudah dipindah jadi folder top-level lewat `git mv` supaya benar-benar
-  berdiri sendiri, sejajar dengan `auth-service/`; tidak ada `docker-compose.yml` di root sama
-  sekali). `traefik/`, `auth-service/`, dan `mariadb/` di-pin `name: gateway` yang **sama**
+  berdiri sendiri, sejajar dengan `service-auth/`; tidak ada `docker-compose.yml` di root sama
+  sekali). `traefik/`, `service-auth/`, dan `mariadb/` di-pin `name: gateway` yang **sama**
   supaya di Docker Desktop tetap kebaca sebagai satu grup "gateway" walau dijalankan dari
   `docker compose up -d` yang berbeda-beda folder; tiap folder `service-*` bisnis memang
   sengaja grup terpisah (nama service masing-masing, tanpa `name:` di-pin) karena bisa
@@ -89,6 +89,29 @@ end-to-end):
   Baru setelah itu jalankan `./restart.sh` dari folder baru masing-masing (`<nama>/restart.sh`,
   bukan lagi `services/<nama>/restart.sh`).
 
+  **Rename folder `auth-service/` jadi `service-auth/`** (sesi ini): supaya konsisten dengan
+  pola penamaan 7 service bisnis (`service-<nama>`, bukan `<nama>-service`). Dilakukan lewat
+  `git mv`, dan SEMUA referensi ikut disesuaikan: nama service & `container_name` di
+  `docker-compose.yml` (`service-auth` / `gateway-service-auth`, sebelumnya `auth-service` /
+  `gateway-auth-service`), hostname yang dipanggil Traefik (`traefik/dynamic/routers.yml` &
+  `middlewares.yml` — service block, `forwardAuth.address`), `restart.sh`, `manage-client.sh`,
+  serta klaim `issuer` di JWT (`service-auth/src/utils/jwt.js`) — access token yang di-*sign*
+  ulang sekarang punya `issuer: "service-auth"`, bukan `"auth-service"` seperti sebelumnya. Nama variabel
+  `.env` (`AUTH_DB_POOL_SIZE`, `AUTH_SERVICE_MEM_LIMIT`, `AUTH_SERVICE_CPUS`) **sengaja TIDAK
+  ikut diubah** — di luar cakupan rename folder/service, dan mengubahnya berarti breaking
+  change tambahan untuk `.env` yang sudah ada tanpa manfaat jelas.
+  Konsekuensi untuk deployment yang sudah jalan (sama persis pola migrasi di atas): `.env`
+  **tidak ikut ter-mv** karena di-`.gitignore` — wajib dikerjakan manual sekali di server yang
+  masih punya folder lama `auth-service/`, SEBELUM restart pakai path baru:
+  ```bash
+  mv auth-service/.env service-auth/.env
+  rm -rf auth-service/
+  ```
+  Karena `issuer` JWT berubah, access token yang **sudah terlanjur terbit** sebelum restart
+  (TTL 15 menit) akan ditolak `service-auth` yang baru begitu restart selesai — dampaknya kecil
+  (client tinggal minta token baru lewat `/oauth/token` atau `refresh_token`), tapi bukan
+  zero-downtime murni untuk request yang sedang jalan di detik-detik restart.
+
 ### Response Envelope
 
 Semua 7 service bisnis balas dengan envelope seragam:
@@ -101,23 +124,23 @@ container harus tetap bisa jalan sendiri.
 
 **Dua pengecualian yang SENGAJA tidak pakai envelope ini** (jangan "diperbaiki" supaya
 konsisten — ini keputusan sadar, bukan bug):
-1. `auth-service`'s endpoint `/oauth/token` dan `/oauth/revoke` — tetap pakai shape
+1. `service-auth`'s endpoint `/oauth/token` dan `/oauth/revoke` — tetap pakai shape
    RFC-style (`access_token`/`token_type`/`error` di top level), karena envelope
    `{success,data}` akan merusak ekspektasi client OAuth2 standar.
 2. `service-khs`'s `POST /khs/cetak` — balas buffer PDF mentah (`Content-Type:
    application/pdf`), bukan JSON, jadi envelope tidak relevan di endpoint itu.
 
-### Database Eksternal (MariaDB Bersama) — HISTORIS, tidak lagi dipakai `auth-service`
+### Database Eksternal (MariaDB Bersama) — HISTORIS, tidak lagi dipakai `service-auth`
 
-> **Status sekarang**: `auth-service` **sudah kembali bundle container `mariadb:10.6` sendiri**
-> di `auth-service/docker-compose.yml` (lihat "Status Implementasi" di atas) — seksi ini
+> **Status sekarang**: `service-auth` **sudah kembali bundle container `mariadb:10.6` sendiri**
+> di `service-auth/docker-compose.yml` (lihat "Status Implementasi" di atas) — seksi ini
 > dipertahankan sebagai catatan historis kenapa & bagaimana instance eksternal ini pernah
 > dipakai, kalau-kalau perlu direferensikan lagi nanti. Detail kredensial `donj08`/risiko
 > `GRANT ALL ON *.*` di bawah **tetap relevan** kalau instance eksternal ini dipakai lagi di
 > masa depan (mis. untuk keperluan lain), tapi **tidak lagi jadi database yang dipakai
-> `auth-service` saat ini**.
+> `service-auth` saat ini**.
 
-`auth-service` sempat **tidak bundle container `mariadb` sendiri** di compose-nya (lihat git
+`service-auth` sempat **tidak bundle container `mariadb` sendiri** di compose-nya (lihat git
 history untuk bentuk itu). Waktu itu connect ke instance MariaDB yang sudah ada & dikelola
 **terpisah dari project ini** — `/opt/mariadb-server/docker-compose.yml`
 di VPS (host "biznet"), dijangkau lewat IP `10.50.0.1:3306` (alamat WireGuard host itu, bukan
@@ -131,7 +154,7 @@ server database produksi kampus yang sesungguhnya, sudah berisi (antara lain)
 — **ini kemungkinan sumber yang sama yang nanti dipakai `DATABASE_URL_SIADE`/`_SIMAKU`/
 `_PAYMENT` di service bisnis** (lihat "Service bisnis baru" di bawah), walau belum diverifikasi
 dipasang eksplisit di `.env` service manapun. Database-database itu **TIDAK disentuh** sama
-sekali oleh setup auth-service — cuma satu database baru ditambahkan khusus untuk gateway:
+sekali oleh setup service-auth — cuma satu database baru ditambahkan khusus untuk gateway:
 `gateway_auth` (tabel `clients`, `scopes`, `refresh_tokens`, sudah di-import & diverifikasi ada
 isinya, lihat di bawah).
 
@@ -139,24 +162,24 @@ isinya, lihat di bawah).
 `SHOW GRANTS` — bukan user yang di-scope khusus ke `gateway_auth`, ini kredensial yang
 diberikan untuk dipakai langsung, belum dibuatkan user terpisah least-privilege). **Risiko
 yang perlu diingat**: karena privilege-nya mencakup SEMUA database di instance itu (termasuk
-SIADE/SIMAKU/PAYMENT di atas), kalau auth-service atau `.env`-nya bocor, blast radius-nya
+SIADE/SIMAKU/PAYMENT di atas), kalau service-auth atau `.env`-nya bocor, blast radius-nya
 bukan cuma `gateway_auth` — kalau nanti mau lebih aman, buat user terpisah
 (`CREATE USER 'gateway_auth'@'%' ...; GRANT ALL ON gateway_auth.* TO ...`) dan pindah
-`auth-service/.env` ke situ, tapi ini **belum dikerjakan** (keputusan sadar, bukan lupa — lihat
+`service-auth/.env` ke situ, tapi ini **belum dikerjakan** (keputusan sadar, bukan lupa — lihat
 histori chat, eksplisit diminta pakai apa adanya & tidak mengubah yang lain dulu).
 
 **Cara kerja**:
-- `auth-service/docker-compose.yml` **tidak perlu** join network Docker khusus apa pun untuk
+- `service-auth/docker-compose.yml` **tidak perlu** join network Docker khusus apa pun untuk
   ini — connect langsung ke `DB_HOST` (IP) lewat network default (`gateway-net` + routing host
-  biasa), bukan lewat nama container. Ini cuma jalan kalau host yang menjalankan auth-service
+  biasa), bukan lewat nama container. Ini cuma jalan kalau host yang menjalankan service-auth
   sendiri punya akses network ke `10.50.0.1` (mis. punya interface WireGuard yang sama).
-- Schema (`auth-service/db/init.sql`) **tidak auto-run** oleh `docker-entrypoint-initdb.d`
+- Schema (`service-auth/db/init.sql`) **tidak auto-run** oleh `docker-entrypoint-initdb.d`
   (mekanisme itu cuma berlaku untuk container mariadb yang dijalankan dari compose ini sendiri
   — kita tidak lagi menjalankan itu). Sudah di-import manual sekali (sesi ini) lewat:
   ```bash
   docker run --rm mariadb:11.6 mariadb -h 10.50.0.1 -P 3306 -u donj08 -p'<password>' \
     -e "CREATE DATABASE IF NOT EXISTS gateway_auth CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-  docker run --rm -v "$(pwd)/auth-service/db/init.sql:/init.sql:ro" mariadb:11.6 \
+  docker run --rm -v "$(pwd)/service-auth/db/init.sql:/init.sql:ro" mariadb:11.6 \
     sh -c "mariadb -h 10.50.0.1 -P 3306 -u donj08 -p'<password>' gateway_auth < /init.sql"
   ```
   Kalau perlu re-import di mesin lain (schema berubah, atau pindah host), jalankan pola yang
@@ -173,7 +196,7 @@ histori chat, eksplisit diminta pakai apa adanya & tidak mengubah yang lain dulu
 `service-ruangan`, `service-pegawai`, `service-bipot`, `service-jadwal`, `service-khs`, dan
 `service-tagihan` (semua kecuali `service-telegram`) connect ke database **eksternal** milik
 sistem akademik/keuangan kampus yang sudah ada — **BUKAN** database `gateway_auth` yang
-dipakai `auth-service` (itu database khusus punya gateway sendiri, cuma `clients`/`scopes`/
+dipakai `service-auth` (itu database khusus punya gateway sendiri, cuma `clients`/`scopes`/
 `refresh_tokens`, lihat "Database Eksternal (MariaDB Bersama)" di atas). Tiap service baca
 `DATABASE_URL_<NAMA>` env var sendiri-sendiri lewat
 helper `src/db/pools.js` — file identik di keenam service itu (parse URL manual, bukan opsi
@@ -210,8 +233,8 @@ bermasalah — semua service sudah dikonversi penuh (`pg` → `mysql2`, schema, 
 Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
 - Tidak ada tipe array/`TEXT[]` seperti Postgres — `allowed_scopes` (tabel `clients`) dan
   `scopes` (tabel `refresh_tokens`) disimpan sebagai **TEXT comma-separated**, di-parse jadi
-  array JS di layer data (`auth-service/src/data/clients.js`,
-  `auth-service/src/data/refreshTokens.js`). JSON native MariaDB sengaja tidak dipakai —
+  array JS di layer data (`service-auth/src/data/clients.js`,
+  `service-auth/src/data/refreshTokens.js`). JSON native MariaDB sengaja tidak dipakai —
   cuma alias `LONGTEXT` + CHECK constraint, servernya tidak melaporkan tipe JSON asli lewat
   wire protocol jadi driver (`mysql2`) tidak bisa auto-parse balik seperti kolom JSON asli
   MySQL — comma-separated TEXT lebih predictable.
@@ -225,7 +248,7 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
   `DATETIME` konsisten UTC, menggantikan asumsi lama `TIMESTAMPTZ` Postgres yang implisit
   UTC.
 - Env var database di-rename dari `POSTGRES_USER/PASSWORD/DB` jadi `DB_USER/DB_PASSWORD/
-  DB_NAME` (lihat `auth-service/.env.example`) — netral terhadap mesin database.
+  DB_NAME` (lihat `service-auth/.env.example`) — netral terhadap mesin database.
 - Healthcheck container `mariadb` pakai `mariadb-admin ping` dengan kredensial user
   aplikasi (bukan `pg_isready` yang bisa cek readiness tanpa auth) — root MariaDB dikasih
   `MARIADB_RANDOM_ROOT_PASSWORD` karena app tidak pernah pakai root sama sekali.
@@ -234,19 +257,19 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
 - Sudah ditemukan & di-fix (sesi sebelumnya): `/oauth/token` bisa dijatuhkan total (proses
   Node crash, semua client kena dampak) oleh payload `scope`/`client_secret` non-string.
   Sekarang ada validasi tipe input + `try/catch` + error-handling middleware yang tidak
-  pernah bocorkan stack trace, di `auth-service` maupun tiap service bisnis. `trust proxy` juga
+  pernah bocorkan stack trace, di `service-auth` maupun tiap service bisnis. `trust proxy` juga
   di-set (Traefik = 1 hop reverse proxy) supaya `express-rate-limit` baca IP client dengan
   benar.
 - Sudah dikerjakan (sesi-sesi sebelumnya): client & scope sekarang di **database** (bukan
   hardcode di source lagi), secret tetap di-hash bcrypt; **refresh token + expiry** dengan
   rotasi & revoke; **scope discovery otomatis** dari service lain; **rate limit
   per-`client_id`** (dua lapis: kasar per-IP sebelum auth, halus per-client setelah auth —
-  lihat Middleware); **docker-compose dipisah per service** (traefik, auth-service+mariadb,
+  lihat Middleware); **docker-compose dipisah per service** (traefik, service-auth+mariadb,
   dan tiap service bisnis masing-masing punya compose sendiri — lihat bagian Status
   Implementasi paling atas). Sudah diverifikasi dengan load test paralel: satu client yang
   dibanjiri kena `429`, client lain di IP yang sama tetap `200` tanpa terganggu.
-- Sudah dikerjakan sesi ini: **CLI admin untuk kelola client** (`./auth-service/manage-client.sh`,
-  jalankan `npm run manage-client` di dalam container `auth-service` yang sedang up lewat
+- Sudah dikerjakan sesi ini: **CLI admin untuk kelola client** (`./service-auth/manage-client.sh`,
+  jalankan `npm run manage-client` di dalam container `service-auth` yang sedang up lewat
   `docker compose exec` — pakai `DATABASE_URL` production yang sama, bukan koneksi lokal
   terpisah). Bisa daftarkan client baru (client_id default-nya prefix `client_` + 32 karakter
   hex random supaya tidak gampang ditebak dari nama aplikasi/partner — operator tetap bisa
@@ -257,8 +280,8 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
   konfirmasi; `refresh_tokens` milik client ikut terhapus lewat `ON DELETE CASCADE`, lihat
   `mariadb/db/init.sql`) — tanpa perlu SQL manual lagi. Pilihan scope
   di checklist-nya diambil dari tabel `scopes` (hasil auto-discovery yang sudah ada, lihat
-  `auth-service/src/scopeRegistry.js`), bukan daftar hardcoded. Implementasi:
-  `auth-service/scripts/manage-client.js` + `auth-service/src/data/clients.js`
+  `service-auth/src/scopeRegistry.js`), bukan daftar hardcoded. Implementasi:
+  `service-auth/scripts/manage-client.js` + `service-auth/src/data/clients.js`
   (`listClients`/`createClient`/`regenerateSecret`/`updateScopes`/`setStatus`/`deleteClient`/
   `listScopes`).
   Diverifikasi end-to-end: create → login berhasil, suspend → `/oauth/token` balas
@@ -266,7 +289,7 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
   langsung berlaku di token berikutnya.
 - Sudah dikerjakan (sesi sebelumnya): **migrasi database dari Postgres ke MariaDB 11.6** —
   lihat "Kenapa MariaDB" di atas untuk detail konsekuensi teknisnya. Semua query, schema,
-  driver (`pg` → `mysql2`), dan env var (`POSTGRES_*` → `DB_*`) dikonversi di `auth-service`
+  driver (`pg` → `mysql2`), dan env var (`POSTGRES_*` → `DB_*`) dikonversi di `service-auth`
   dan `service-a` (contoh service bisnis yang dipakai waktu itu untuk verifikasi — sudah
   dihapus, lihat catatan "service-a dihapus" di bawah). Diverifikasi end-to-end di container
   yang benar-benar jalan (bukan cuma syntax-check): token issuance, list/create data lewat
@@ -279,7 +302,7 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
   sudah ada 7 service bisnis nyata (hasil port `RESTFULL-API-EXPRESSJS`), jadi service-a tidak
   perlu dipertahankan. Yang ikut dibersihkan: folder `services/service-a/`, router+service
   block-nya di `traefik/dynamic/routers.yml`, entry-nya di
-  `auth-service/src/config/services.js`, tabel `orders` (drop dari `auth-service/db/init.sql`
+  `service-auth/src/config/services.js`, tabel `orders` (drop dari `service-auth/db/init.sql`
   dan dari database yang sedang jalan), scope `orders:read`/`orders:write` (dihapus dari tabel
   `scopes` dan dari `allowed_scopes` kedua demo client — diganti scope dari 7 service bisnis
   yang masih ada), serta folder "2. Service A" dan referensi `/api/orders` di Postman
@@ -304,9 +327,11 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
      kalau ganti) + loopback (`127.0.0.1`/`::1`, supaya curl/Newman lokal tetap jalan). Tanpa ini
      siapa pun yang tahu IP asli origin bisa bypass Cloudflare (WAF/DDoS-protection-nya) langsung.
      **Catatan dev Mac/Windows**: Docker Desktop tidak meneruskan `127.0.0.1` asli ke container
-     (traffic host→published-port muncul dari gateway VM-nya, di mesin ini `192.168.65.0/24`) —
-     baris itu juga ada di allowlist, khusus untuk dev; di server Linux produksi asli baris itu
-     tidak relevan (boleh dihapus, `127.0.0.1/::1` saja cukup).
+     (traffic host→published-port muncul dari gateway subnet docker-nya sendiri — nilainya ikut
+     subnet network `gateway-net` di mesin masing-masing, di mesin ini sekarang `172.18.0.0/16`,
+     bisa beda lagi kalau network dibuat ulang) — baris itu juga ada di allowlist, khusus untuk
+     dev; di server Linux produksi asli baris itu tidak relevan (boleh dihapus, `127.0.0.1/::1`
+     saja cukup).
   2. **`forwardedHeaders.trustedIPs`** (di `traefik/traefik.yml`, entrypoint `web` & `websecure`)
      + `rate-limit-ip` sekarang pakai `sourceCriterion.ipStrategy.depth: 1` — supaya Traefik
      baca IP visitor asli dari `X-Forwarded-For` yang dikirim Cloudflare, bukan IP edge
@@ -332,9 +357,9 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
      random sekali, kalau perlu diganti/rotasi: `htpasswd -nbm <user> <password-baru>`, ganti
      hash di `traefik/dynamic/middlewares.yml` (middleware `dashboard-auth`), lalu
      `docker compose up -d` (dari `traefik/`) untuk reload dynamic config.
-  4. JWT pakai HS256 (secret simetris) — aman selama hanya `auth-service` yang verifikasi;
+  4. JWT pakai HS256 (secret simetris) — aman selama hanya `service-auth` yang verifikasi;
      kalau nanti ada verifier lain (mis. plugin JWT di Traefik), pertimbangkan RS256/ES256.
-  5. CRUD client sekarang bisa lewat CLI (`./auth-service/manage-client.sh`, lihat di atas), tapi belum ada
+  5. CRUD client sekarang bisa lewat CLI (`./service-auth/manage-client.sh`, lihat di atas), tapi belum ada
      **admin API via HTTP** — kalau nanti butuh dikelola dari luar terminal (mis. dashboard
      partner self-service), endpoint admin perlu dibuat terpisah dengan auth sendiri (jangan
      taruh di belakang scope client biasa).
@@ -343,7 +368,7 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
   7. Rate limit per-client saat ini **satu tier untuk semua** (average 20/burst 40) — kolom
      `rate_limit_tier` di tabel `clients` belum benar-benar dipakai untuk membedakan kuota
      (Traefik native middleware tidak baca DB per-request). Kalau butuh kuota beda per tier,
-     limiting harus pindah ke `auth-service` sendiri (token bucket di MariaDB/Redis, dicek
+     limiting harus pindah ke `service-auth` sendiri (token bucket di MariaDB/Redis, dicek
      di `/verify`, balas 429 dari sana) — sudah dicatat, belum dikerjakan.
   8. Setiap service masih pakai kredensial database yang sama (`DB_USER`) — belum ada role DB
      terpisah per service dengan akses dibatasi hanya ke tabelnya sendiri.
@@ -354,7 +379,7 @@ Konsekuensi teknis yang perlu diingat kalau menambah kode baru di sini:
      kredensial diisi di `.env` masing-masing, uji ulang tiap endpoint terhadap data asli
      sebelum dianggap production-ready — lihat tabel "Service bisnis baru" di atas.
   10. `demo-client`/`readonly-client` belum diberi scope apa pun dari 7 service baru (`ruangan:
-      list`, `pegawai:list`, dst.) — grant lewat `./auth-service/manage-client.sh` kalau mau
+      list`, `pegawai:list`, dst.) — grant lewat `./service-auth/manage-client.sh` kalau mau
       dites lewat gateway.
 
 Dua penyesuaian dari rencana awal di atas, dengan alasan:
@@ -368,7 +393,7 @@ Dua penyesuaian dari rencana awal di atas, dengan alasan:
    banyak dan mau auto-discovery, boleh reconsider Docker provider tapi tambahkan socket-proxy
    (mis. `tecnativa/docker-socket-proxy`) di antaranya, jangan mount socket langsung.
 
-2. **Auth + scope-check pakai `forwardAuth` (middleware native Traefik) ke `auth-service`,
+2. **Auth + scope-check pakai `forwardAuth` (middleware native Traefik) ke `service-auth`,
    bukan Traefik plugin (Yaegi).** Plugin Traefik komunitas untuk JWT/scope butuh setup
    plugin registry/local plugin dev mode dan quality-nya bervariasi (banyak yang tidak
    ter-maintain). `forwardAuth` sudah built-in, well-tested, dan karena scope-check butuh
@@ -458,18 +483,20 @@ benar-benar production-ready di VPS:
 1. **Port** — `traefik/.env` (copy dari `.env.example`) isi `TRAEFIK_HTTP_PORT=80` dan
    `TRAEFIK_HTTPS_PORT=443` (default sekarang 8081/8443 karena port 80/443 host dipakai Herd
    di mesin ini). Compose file (`traefik/docker-compose.yml`) sendiri tidak perlu diedit.
-2. **Baris `192.168.65.0/24`** di `traefik/dynamic/middlewares.yml` (middleware
-   `cloudflare-ips`) — **hapus baris ini**. Itu workaround khusus Docker Desktop Mac/Windows
-   (host→published-port terlihat datang dari gateway VM-nya, bukan `127.0.0.1` asli) — di VPS
-   (Docker Engine native di Linux) tidak dibutuhkan, dan mempertahankannya cuma menambah
-   attack surface kalau kebetulan network internal VPS memakai subnet yang sama. Baris ini
-   sudah ditandai jelas dengan blok komentar "DEV-ONLY — HAPUS..." di file itu.
+2. **Baris subnet dev-only** (saat ini `172.18.0.0/16`, cek nilai aktualnya langsung di file —
+   bisa beda tiap kali `gateway-net` dibuat ulang) di `traefik/dynamic/middlewares.yml`
+   (middleware `cloudflare-ips`) — **hapus baris ini**. Itu workaround khusus Docker Desktop
+   Mac/Windows (host→published-port terlihat datang dari gateway subnet docker-nya sendiri,
+   bukan `127.0.0.1` asli) — di VPS (Docker Engine native di Linux) tidak dibutuhkan, dan
+   mempertahankannya cuma menambah attack surface kalau kebetulan network internal VPS memakai
+   subnet yang sama. Baris ini sudah ditandai jelas dengan blok komentar "DEV-ONLY — HAPUS..."
+   di file itu.
 3. **Sertifikat** — ganti `traefik/certs/cloudflare-origin.{pem,key}` placeholder dengan
    Cloudflare Origin CA asli (lihat langkah generate di atas) sebelum DNS domain diarahkan ke
    VPS ini.
 4. **DNS** — A record domain di Cloudflare diarahkan ke IP VPS, status **proxied** (awan
    oranye), mode SSL/TLS **Full (strict)**.
-5. **Kredensial** — semua `.env` (`auth-service/.env`, tiap `<nama>/.env` service bisnis) masih
+5. **Kredensial** — semua `.env` (`service-auth/.env`, tiap `<nama>/.env` service bisnis) masih
    berisi placeholder di repo ini, isi ulang dengan kredensial asli di VPS (`JWT_SECRET`,
    `DB_PASSWORD`, `DATABASE_URL_<NAMA>` per service, `TELEGRAM_BOT_TOKEN`).
 6. **Opsional, defense-in-depth tambahan**: firewall level OS di VPS (`ufw`/`iptables`) yang
@@ -522,7 +549,7 @@ Service bisnis (connection pool ke database eksternal kampus) masih bisa di-tuni
 `.env` tanpa rebuild image — semua nilai di bawah sudah ada default aman, **sesuaikan begitu
 tahu spek host asli**.
 
-> **`auth-service`** sekarang punya `mariadb:10.6` sendiri (bundled, lihat "Status
+> **`service-auth`** sekarang punya `mariadb:10.6` sendiri (bundled, lihat "Status
 > Implementasi" di atas) — bukan lagi nempel ke instance bersama di luar repo ini. Jadi
 > `max_connections`/`innodb_buffer_pool_size` instance itu **kembali jadi tanggung jawab
 > compose ini sendiri** (image `mariadb:10.6` default, belum di-tuning eksplisit — kalau perlu,
@@ -530,7 +557,7 @@ tahu spek host asli**.
 > cuma perlu headroom di bawah `max_connections` instance dedicated ini sendiri, bukan berbagi
 > budget dengan sistem lain. Bagian "Model budget koneksi" di bawah yang menyebut instance
 > bersama tetap relevan **kalau** instance eksternal itu dipakai lagi nanti (lihat "Database
-> Eksternal (MariaDB Bersama)" — sekarang historis), bukan untuk kondisi auth-service saat ini.
+> Eksternal (MariaDB Bersama)" — sekarang historis), bukan untuk kondisi service-auth saat ini.
 
 ### Model budget koneksi
 
@@ -542,10 +569,10 @@ paling akhir connect akan gagal start (`ER_CON_COUNT_ERROR`) begitu database pen
 
 Contoh perhitungan untuk instance MariaDB bersama di VPS (`max_connections=500`, lihat
 `/opt/mariadb-server/docker-compose.yml` — nilai ini dikelola di luar repo ini, cek langsung
-di sana kalau berubah), cuma dipakai `auth-service` dari project ini saat ini:
+di sana kalau berubah), cuma dipakai `service-auth` dari project ini saat ini:
 ```
 max_connections (instance bersama) = 500
-AUTH_DB_POOL_SIZE                   = 20   -> auth-service
+AUTH_DB_POOL_SIZE                   = 20   -> service-auth
 -------------------------------------------
 Headroom tersisa                    = 480  (tapi instance ini mungkin punya consumer LAIN
                                              di luar project ini yang tidak kelihatan dari
@@ -574,12 +601,12 @@ DAN tanpa cek consumer lain di instance bersama itu yang tidak kelihatan dari re
 
 ### Variabel yang bisa di-tuning
 
-`auth-service/.env` (lihat `auth-service/docker-compose.yml` — tuning instance database
+`service-auth/.env` (lihat `service-auth/docker-compose.yml` — tuning instance database
 sendiri ada di `/opt/mariadb-server/docker-compose.yml`, di luar project ini):
 | Variabel | Default | Fungsi |
 |---|---|---|
-| `AUTH_DB_POOL_SIZE` | 20 | `connectionLimit` pool `auth-service` ke instance MariaDB bersama |
-| `AUTH_SERVICE_MEM_LIMIT` / `AUTH_SERVICE_CPUS` | 512m / 1.0 | Limit resource container `auth-service` |
+| `AUTH_DB_POOL_SIZE` | 20 | `connectionLimit` pool `service-auth` ke instance MariaDB bersama |
+| `AUTH_SERVICE_MEM_LIMIT` / `AUTH_SERVICE_CPUS` | 512m / 1.0 | Limit resource container `service-auth` |
 
 Tiap `<nama>/.env` (business service, folder top-level):
 | Variabel | Default | Fungsi |
@@ -589,7 +616,7 @@ Tiap `<nama>/.env` (business service, folder top-level):
 
 Selain itu, `mariadb` juga sudah di-tuning tetap (tidak lewat `.env`, jarang perlu diubah):
 `innodb-flush-log-at-trx-commit=2` (trade throughput vs durability — lihat komentar di
-`auth-service/docker-compose.yml` untuk detail trade-off-nya), `wait-timeout=180` (reclaim
+`service-auth/docker-compose.yml` untuk detail trade-off-nya), `wait-timeout=180` (reclaim
 koneksi idle lebih cepat dari default 8 jam), `ulimits.nofile=65536` (supaya tidak kehabisan
 file descriptor begitu `max_connections` dinaikkan), dan log container dibatasi
 (`max-size: 10m, max-file: 3`) supaya tidak mengisi disk host tanpa batas.
@@ -628,34 +655,34 @@ muncul, lalu 4.2 membuktikan client lain tidak ikut kena limit. Sudah divalidasi
 ## Cara Jalankan & Test
 
 **Setelah ada perubahan kode**, tiap folder yang punya `docker-compose.yml` juga punya
-`restart.sh` — jalankan `./restart.sh` dari folder itu (`traefik/`, `auth-service/`, `mariadb/`,
+`restart.sh` — jalankan `./restart.sh` dari folder itu (`traefik/`, `service-auth/`, `mariadb/`,
 tiap `<nama>/` service bisnis). Scriptnya `git pull` dulu (menarik commit terbaru untuk seluruh repo,
 walau dijalankan dari subfolder), baru rebuild + restart service itu saja, lalu tail log-nya
 otomatis. Untuk `traefik/`, scriptnya sengaja pakai `--force-recreate` (bukan `up -d` biasa)
 — perubahan `dynamic/*.yml` lewat `git pull` pernah tidak ke-reload otomatis meski
 `watch: true`, jadi lebih aman selalu force-recreate daripada mengandalkan hot-reload. Untuk
-`auth-service`/service bisnis, scriptnya `docker compose up -d --build` (cuma me-rebuild
+`service-auth`/service bisnis, scriptnya `docker compose up -d --build` (cuma me-rebuild
 service itu, tidak ikut restart `mariadb`/service lain yang
 konfignya tidak berubah).
 
 Ada **tiga compose stack terpisah** — jalankan berurutan (network dulu, auth, baru
-traefik, baru service). `auth-service` sekarang bundle `mariadb:10.6` sendiri (lihat "Status
+traefik, baru service). `service-auth` sekarang bundle `mariadb:10.6` sendiri (lihat "Status
 Implementasi" di atas) jadi **tidak perlu WireGuard/network eksternal apa pun** untuk itu —
 cukup `gateway-net` biasa. Database eksternal kampus (SIADE/SIMAKU/PAYMENT) yang dipakai 6
 service bisnis lain tetap butuh network access ke sumbernya masing-masing, tapi itu di luar
-lingkup auth-service:
+lingkup service-auth:
 
 ```bash
 # 0. Network bersama — dibuat manual SEKALI, tidak dimiliki compose file mana pun
 docker network create gateway-net
 
-# 1. Auth Service + MariaDB-nya sendiri (folder auth-service/, project name "gateway")
-cd auth-service
+# 1. Auth Service + MariaDB-nya sendiri (folder service-auth/, project name "gateway")
+cd service-auth
 cp .env.example .env
 # isi JWT_SECRET (openssl rand -hex 32), DB_USER + DB_PASSWORD bebas (dipakai untuk bikin
-# user MariaDB baru DAN untuk auth-service connect ke situ) — DB_HOST/DB_NAME biarkan default.
+# user MariaDB baru DAN untuk service-auth connect ke situ) — DB_HOST/DB_NAME biarkan default.
 docker compose up -d --build
-docker compose ps      # pastikan KEDUA container "healthy" — mariadb-server & gateway-auth-service
+docker compose ps      # pastikan KEDUA container "healthy" — mariadb-server & gateway-service-auth
 # init.sql (schema + seed demo-client/readonly-client) auto-run otomatis saat volume
 # mariadb_data masih kosong (first run) — tidak perlu import manual lagi.
 
@@ -685,16 +712,16 @@ DB tapi kredensialnya masih placeholder) — itu **bukan kegagalan port-nya**, c
 data.
 
 Kenapa dipisah begini: setiap bagian punya `docker-compose.yml` sendiri di folder-nya
-masing-masing — tidak ada compose file di root sama sekali. `auth-service` punya compose
-sendiri di folder `auth-service/`, sekarang bundle `mariadb:10.6` di compose yang sama
-(container `mariadb-server` + `gateway-auth-service`) — sempat dipindah ke instance eksternal
+masing-masing — tidak ada compose file di root sama sekali. `service-auth` punya compose
+sendiri di folder `service-auth/`, sekarang bundle `mariadb:10.6` di compose yang sama
+(container `mariadb-server` + `gateway-service-auth`) — sempat dipindah ke instance eksternal
 lalu dikembalikan ke pola bundled, lihat "Database Eksternal (MariaDB Bersama)" di atas untuk
 riwayatnya. `traefik` juga punya compose sendiri di folder `traefik/` karena murni proxy
 stateless, tidak punya data, tidak perlu ikut siklus hidup database. Keduanya (`traefik` &
-`auth-service`) tetap di-pin `name: gateway` yang sama
+`service-auth`) tetap di-pin `name: gateway` yang sama
 supaya di Docker Desktop grup-nya
 kebaca jelas sebagai satu "gateway", bukan dua grup terpisah atau nama folder kebetulan
-("traefik"/"auth-service"). Konsekuensinya: `docker compose down` dari salah satu folder
+("traefik"/"service-auth"). Konsekuensinya: `docker compose down` dari salah satu folder
 hanya mematikan service yang didefinisikan di file itu, dan compose akan warning "orphan
 containers" untuk service dari compose file "gateway" satunya — itu bukan error, cukup
 abaikan (atau matikan dari kedua folder kalau mau stop total). Tiap service bisnis
@@ -721,7 +748,7 @@ curl -k -u admin:<password> -H "Host: traefik.umjambi.ac.id" \
   https://localhost:8443/dashboard/
 ```
 
-Demo client di-seed lewat `auth-service/db/init.sql` (hanya jalan otomatis kalau volume
+Demo client di-seed lewat `service-auth/db/init.sql` (hanya jalan otomatis kalau volume
 `mariadb_data` masih kosong / first run):
 - `demo-client` / `demo-secret` — semua scope 7 service bisnis (baca + tulis, mis.
   `ruangan:list`, `tagihan:create`, `telegram:send-message`, dst.)
@@ -732,7 +759,7 @@ Demo client di-seed lewat `auth-service/db/init.sql` (hanya jalan otomatis kalau
 Untuk client baru di luar seed itu (atau rotate secret / ubah scope / suspend / hapus client
 yang sudah ada), pakai CLI interaktif — bukan SQL manual:
 ```bash
-./auth-service/manage-client.sh   # butuh auth-service sudah "up" (docker compose ps)
+./service-auth/manage-client.sh   # butuh service-auth sudah "up" (docker compose ps)
 ```
 
 ```bash
@@ -770,22 +797,22 @@ dipakai lagi setelah rotasi, dan refresh token yang sudah di-revoke ditolak. Pay
 
 **Menambah service baru** (misalnya `service-b`), contoh ikuti pola salah satu dari 7 service
 bisnis yang sudah ada — `service-ruangan` yang paling sederhana (1 DB eksternal, 1 route):
-1. Buat folder top-level `service-b/` (sejajar dengan `service-ruangan/`, `auth-service/`, dst.)
+1. Buat folder top-level `service-b/` (sejajar dengan `service-ruangan/`, `service-auth/`, dst.)
    dengan `Dockerfile` + `docker-compose.yml` sendiri (lihat `service-ruangan/docker-compose.yml`
    sebagai contoh) — network `gateway-net` sebagai `external: true`. Compose file-nya berdiri
-   sendiri, tidak digabung ke compose milik `traefik`/`auth-service`.
+   sendiri, tidak digabung ke compose milik `traefik`/`service-auth`.
 2. Expose `GET /scopes` di service itu — manifest berisi `{ service, routes: [{ method, path,
-   scope, description }] }`. **Tidak perlu edit apa pun di `auth-service`** untuk
+   scope, description }] }`. **Tidak perlu edit apa pun di `service-auth`** untuk
    mendaftarkan scope — auto-discovered.
-3. Daftarkan service itu di `auth-service/src/config/services.js` (`name`, `baseUrl`,
+3. Daftarkan service itu di `service-auth/src/config/services.js` (`name`, `baseUrl`,
    `gatewayPrefix` — harus sama dengan prefix router-nya di Traefik, sekarang `/api/v1` untuk
    semua service bisnis, lihat "Status Implementasi" poin API versioning). Ini SATU-SATUNYA
-   tempat di `auth-service` yang perlu disentuh untuk service baru.
+   tempat di `service-auth` yang perlu disentuh untuk service baru.
 4. Tambahkan router+service baru di `traefik/dynamic/routers.yml` dengan middleware
    `gateway-chain`.
-5. Update `allowed_scopes` client yang relevan lewat `./auth-service/manage-client.sh`
+5. Update `allowed_scopes` client yang relevan lewat `./service-auth/manage-client.sh`
    (atau SQL langsung kalau perlu).
-6. Jalankan: `docker compose up -d --build` di `auth-service/` dulu kalau ada perubahan di
+6. Jalankan: `docker compose up -d --build` di `service-auth/` dulu kalau ada perubahan di
    sana (mis. `config/services.js`), lalu `docker compose up -d` di `traefik/` kalau ada
    perubahan dynamic config, baru `cd service-b && docker compose up -d --build`.
 
@@ -857,7 +884,7 @@ Urutan chain per router (dari luar ke dalam) — **implementasi aktual, dua lapi
    tolak koneksi yang tidak datang dari IP range Cloudflare/loopback lokal. Ini yang mencegah
    bypass Cloudflare langsung ke origin lewat IP asli server (lihat "TLS / SSL (Cloudflare)").
 1. **rate-limit-ip** — proteksi kasar per-IP, jalan SEBELUM auth (client belum punya
-   identitas di titik ini, auth-service belum tentu sudah dipanggil) — cuma anti-flood
+   identitas di titik ini, service-auth belum tentu sudah dipanggil) — cuma anti-flood
    dasar, limitnya longgar (average 20/burst 40 di router `/oauth`, atau 50/100 di
    `gateway-chain`). Pakai `ipStrategy.depth: 1` supaya baca IP visitor asli dari
    `X-Forwarded-For` yang dipercaya dari Cloudflare (`forwardedHeaders.trustedIPs` di
@@ -870,7 +897,7 @@ Urutan chain per router (dari luar ke dalam) — **implementasi aktual, dua lapi
    yang bikin satu client tidak bisa menghabiskan kuota client lain walau berbagi IP/NAT —
    sudah diverifikasi dengan load test paralel.
 5. **scope-check** — digabung jadi satu hop dengan langkah auth di atas (endpoint `/verify`
-   auth-service memvalidasi token DAN scope sekaligus), bukan middleware terpisah.
+   service-auth memvalidasi token DAN scope sekaligus), bukan middleware terpisah.
 6. **stripprefix/rewrite** — normalisasi path sebelum diteruskan ke service.
 
 Semua middleware didefinisikan sekali di `traefik/dynamic/middlewares.yml` lalu
@@ -935,7 +962,7 @@ service          (microservice mana yang punya resource ini)
 - Traefik middleware **auth** cukup verifikasi signature + expiry access token.
 - Traefik middleware **scope-check** cocokkan `scopes` di token vs scope yang dibutuhkan
   route — route→scope map di-**discover otomatis** dari manifest `/scopes` tiap service
-  (lihat `auth-service/src/scopeRegistry.js`), bukan ditulis manual.
+  (lihat `service-auth/src/scopeRegistry.js`), bukan ditulis manual.
 
 ### Alur Client Credentials
 ```
@@ -958,14 +985,14 @@ Microcervices/                    # root TIDAK punya docker-compose.yml sendiri
 │   └── dynamic/
 │       ├── middlewares.yml       # semua middleware & chain, reusable
 │       └── routers.yml           # routers + services per microservice
-├── mariadb/                      # database milik auth-service SAJA, compose terpisah dari
-│   │                               # auth-service/ (project name "gateway" juga) — lihat
+├── mariadb/                      # database milik service-auth SAJA, compose terpisah dari
+│   │                               # service-auth/ (project name "gateway" juga) — lihat
 │   │                               # "Status Implementasi" di atas untuk alasan pemisahannya
 │   ├── docker-compose.yml
 │   ├── .env
 │   └── db/init.sql               # schema + seed — AUTO-RUN saat volume mariadb_data kosong
-├── auth-service/                 # control plane: client, scope, token issuer, refresh/revoke
-│   ├── docker-compose.yml        # HANYA auth-service (bukan lagi bundle mariadb — lihat mariadb/
+├── service-auth/                 # control plane: client, scope, token issuer, refresh/revoke
+│   ├── docker-compose.yml        # HANYA service-auth (bukan lagi bundle mariadb — lihat mariadb/
 │   │                               # di atas), project name "gateway"
 │   ├── .env                       # JWT_SECRET, DB_HOST/DB_USER/DB_PASSWORD/DB_NAME
 │   ├── manage-client.sh           # CLI admin: create/rotate secret/ubah scope/suspend/hapus client

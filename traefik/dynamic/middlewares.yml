@@ -52,7 +52,7 @@ http:
           # └────────────────────────────────────────────────────────────────────────────────
 
     # Lapis 1: proteksi kasar per-IP, jalan SEBELUM auth supaya request yang belum
-    # punya identitas (belum lewat forwardAuth) tidak bisa membanjiri auth-service.
+    # punya identitas (belum lewat forwardAuth) tidak bisa membanjiri service-auth.
     # Limitnya sengaja longgar — bukan kuota per-tenant, cuma anti-flood dasar.
     # ipStrategy.depth: 1 = ambil IP client asli dari X-Forwarded-For (posisi terakhir dari
     # kanan) yang sudah dipercaya lewat forwardedHeaders.trustedIPs di traefik.yml — tanpa ini,
@@ -77,14 +77,14 @@ http:
         customResponseHeaders:
           X-Powered-By: ""
 
-    # Memanggil auth-service untuk validasi JWT + scope-check dalam satu hop.
+    # Memanggil service-auth untuk validasi JWT + scope-check dalam satu hop.
     # Traefik otomatis mengirim header X-Forwarded-Method / X-Forwarded-Uri
-    # dan meneruskan Authorization header ke auth-service. Response header
-    # X-Client-Id dari auth-service diteruskan ke request berikutnya di chain ini
+    # dan meneruskan Authorization header ke service-auth. Response header
+    # X-Client-Id dari service-auth diteruskan ke request berikutnya di chain ini
     # (dipakai oleh rate-limit-client di bawah) dan ke backend service.
     auth-scope:
       forwardAuth:
-        address: "http://auth-service:4000/verify"
+        address: "http://service-auth:4000/verify"
         trustForwardHeader: true
         authResponseHeaders:
           - "X-Client-Id"

@@ -31,14 +31,14 @@ http:
         - cloudflare-ips
         - rate-limit-ip
         - secure-headers
-      service: auth-service
+      service: service-auth
 
     # Semua request ke service bisnis wajib lewat gateway-chain (rate-limit, headers,
     # auth+scope). Tiap router scoped ke prefix-nya sendiri di bawah /api/v1/* — supaya tiap
     # router eksplisit menangani prefix-nya sendiri, tidak mengandalkan urutan prioritas
     # implisit Traefik (yang sebenarnya tetap benar otomatis lewat rule-specificity, tapi
     # eksplisit lebih jelas dibaca). "v1" SENGAJA tidak dipakai untuk /oauth/* (auth-token di
-    # atas) — auth-service adalah control plane terpisah, bukan bagian dari versioning API
+    # atas) — service-auth adalah control plane terpisah, bukan bagian dari versioning API
     # bisnis ini.
     # Health check PUBLIK per service, TANPA token — dipakai monitoring eksternal/uptime
     # checker. "Path" exact match lebih spesifik daripada "PathPrefix" milik router bisnis di
@@ -171,10 +171,10 @@ http:
       service: service-telegram
 
   services:
-    auth-service:
+    service-auth:
       loadBalancer:
         servers:
-          - url: "http://auth-service:4000"
+          - url: "http://service-auth:4000"
 
     service-ruangan:
       loadBalancer:

@@ -24,7 +24,7 @@ async function scopeChoices(currentScopes = []) {
   if (scopes.length === 0) {
     ui.warn(
       'Belum ada scope yang ter-discover. Pastikan service lain sudah expose GET /scopes dan ' +
-        'auth-service sudah sempat fetch (lihat src/scopeRegistry.js).'
+        'service-auth sudah sempat fetch (lihat src/scopeRegistry.js).'
     );
   }
   return scopes.map((s) => ({

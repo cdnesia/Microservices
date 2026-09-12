@@ -1,5 +1,5 @@
 # Compose file milik service-khs sendiri — folder top-level, sejajar dengan traefik/,
-# auth-service/, mariadb/ (dulu ada di services/service-khs/, sudah dipindah ke root lewat
+# service-auth/, mariadb/ (dulu ada di services/service-khs/, sudah dipindah ke root lewat
 # git mv supaya tiap service benar-benar berdiri sendiri, bukan lagi bernaung di bawah folder
 # services/ bersama). Network `gateway-net` harus sudah dibuat manual (nama-nya dipin literal
 # supaya bisa dirujuk di sini).
@@ -8,7 +8,7 @@
 # gateway) — kredensial harus disediakan sendiri, lihat .env.example. Image service ini lebih
 # besar dari service lain karena bundle Chromium (Puppeteer) untuk generate PDF KHS.
 #
-# Jalankan: docker compose up -d --build   (dari folder ini, SETELAH auth-service jalan)
+# Jalankan: docker compose up -d --build   (dari folder ini, SETELAH service-auth jalan)
 
 networks:
   gateway-net:

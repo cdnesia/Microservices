@@ -10,13 +10,13 @@ const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 menit
 function signToken(clientId, scopes) {
   return jwt.sign({ scopes }, JWT_SECRET, {
     subject: clientId,
-    issuer: 'auth-service',
+    issuer: 'service-auth',
     expiresIn: ACCESS_TOKEN_TTL_SECONDS,
   });
 }
 
 function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET, { issuer: 'auth-service' });
+  return jwt.verify(token, JWT_SECRET, { issuer: 'service-auth' });
 }
 
 module.exports = { signToken, verifyToken, ACCESS_TOKEN_TTL_SECONDS };
