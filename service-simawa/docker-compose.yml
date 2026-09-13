@@ -1,0 +1,67 @@
+# Compose file milik service-simawa sendiri — folder top-level, sejajar dengan traefik/,
+# service-auth/, mariadb/, dan tiap service-* bisnis lain. Network `gateway-net` harus
+# sudah dibuat manual (lihat CLAUDE.md bagian "Cara Jalankan & Test").
+#
+# service-simawa adalah HASIL PORT dari aplikasi Laravel terpisah di ~/Herd/simawa
+# ("Sistem Informasi Mahasiswa" / SIMAWA, portal akademik mahasiswa UM Jambi) — folder
+# simawa/ itu HANYA referensi, tidak disentuh sama sekali oleh perubahan ini. Beda dari
+# 7 service bisnis lain: service ini juga expose auth mahasiswa sendiri (bukan cuma
+# scope-check client gateway) — lihat X-Student-Token di src/utils/studentToken.js.
+#
+# 5 database eksternal — SAMA PERSIS yang dipakai aplikasi Laravel aslinya:
+#   DATABASE_URL_SIMAWA     -> tabel `users` (login mahasiswa, koneksi `mysql` default Laravel)
+#   DATABASE_URL_SIADE      -> data akademik utama (KRS, jadwal, KHS, EDOM, dst — koneksi `db_siade`)
+#   DATABASE_URL_SIADE_OLD  -> data pegawai/ruang (koneksi `db_siade_old`, SAMA tabel yang
+#                              dipakai service-pegawai/service-ruangan/service-jadwal)
+#   DATABASE_URL_PAYMENT    -> tabel `tagihan` (SAMA database yang dipakai service-tagihan)
+#   DATABASE_URL_SIMAKU     -> rincian biaya bipot untuk SPP otomatis (SAMA database yang
+#                              dipakai service-bipot/service-tagihan)
+#
+# Jalankan: docker compose up -d --build   (dari folder ini, SETELAH service-auth jalan)
+
+networks:
+  gateway-net:
+    name: gateway-net
+    external: true
+
+services:
+  service-simawa:
+    build: .
+    container_name: service-simawa
+    environment:
+      DATABASE_URL_SIMAWA: ${DATABASE_URL_SIMAWA}
+      DATABASE_URL_SIADE: ${DATABASE_URL_SIADE}
+      DATABASE_URL_SIADE_OLD: ${DATABASE_URL_SIADE_OLD}
+      DATABASE_URL_PAYMENT: ${DATABASE_URL_PAYMENT}
+      DATABASE_URL_SIMAKU: ${DATABASE_URL_SIMAKU}
+      # Secret token identitas mahasiswa (X-Student-Token) — TERPISAH dari JWT_SECRET
+      # service-auth (itu untuk identitas CLIENT gateway, ini untuk identitas MAHASISWA).
+      STUDENT_JWT_SECRET: ${STUDENT_JWT_SECRET}
+      STUDENT_JWT_TTL_SECONDS: ${STUDENT_JWT_TTL_SECONDS:-7200}
+      # Pengganti Laravel APP_KEY untuk encrypt/decrypt id internal (kegiatan mahasiswa,
+      # jadwal_id KRS) yang dikirim bolak-balik ke client — lihat src/utils/cryptoId.js.
+      SIMAWA_CRYPT_SECRET: ${SIMAWA_CRYPT_SECRET}
+      # Integrasi SIMAKU (HMAC) — SENGAJA kosong secara default, lihat .env.example dan
+      # src/services/simaku.service.js: di aplikasi Laravel asli variabel ini juga TIDAK
+      # PERNAH diisi, jadi modul riwayat-pembayaran & generate-tagihan-KKN memang belum
+      # bisa jalan sampai kredensial SIMAKU asli didapat & diisi di sini.
+      SIMAKU_URL: ${SIMAKU_URL:-}
+      SIMAKU_HMAC_SECRET: ${SIMAKU_HMAC_SECRET:-}
+      SIMAKU_HMAC_API_KEY: ${SIMAKU_HMAC_API_KEY:-}
+      PORT: 5000
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+    networks:
+      - gateway-net
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: ${SERVICE_MEM_LIMIT:-256m}
+    cpus: ${SERVICE_CPUS:-0.5}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3

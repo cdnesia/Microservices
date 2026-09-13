@@ -107,6 +107,15 @@ http:
         - health-chain
       service: service-telegram
 
+    service-simawa-health:
+      rule: "Path(`/api/v1/simawa/health`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - health-chain
+      service: service-simawa
+
     service-ruangan:
       rule: "PathPrefix(`/api/v1/ruangan`)"
       entryPoints:
@@ -170,6 +179,15 @@ http:
         - gateway-chain
       service: service-telegram
 
+    service-simawa:
+      rule: "PathPrefix(`/api/v1/simawa`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - gateway-chain
+      service: service-simawa
+
   services:
     service-auth:
       loadBalancer:
@@ -210,3 +228,8 @@ http:
       loadBalancer:
         servers:
           - url: "http://service-telegram:5000"
+
+    service-simawa:
+      loadBalancer:
+        servers:
+          - url: "http://service-simawa:5000"

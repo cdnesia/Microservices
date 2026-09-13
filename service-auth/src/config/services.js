@@ -39,4 +39,9 @@ module.exports = [
     baseUrl: process.env.SERVICE_TELEGRAM_URL || 'http://service-telegram:5000',
     gatewayPrefix: '/api/v1',
   },
+  {
+    name: 'service-simawa',
+    baseUrl: process.env.SERVICE_SIMAWA_URL || 'http://service-simawa:5000',
+    gatewayPrefix: '/api/v1',
+  },
 ];
