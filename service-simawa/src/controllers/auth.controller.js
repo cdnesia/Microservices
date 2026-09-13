@@ -3,6 +3,7 @@ const { z } = require('zod');
 const ApiResponse = require('../utils/ApiResponse');
 const { parseOrThrow } = require('../utils/validate');
 const studentToken = require('../utils/studentToken');
+const tokenBlocklist = require('../utils/tokenBlocklist');
 const authService = require('../services/auth.service');
 
 const loginSchema = z
@@ -20,16 +21,21 @@ async function login(req, res) {
   ApiResponse.success(res, { data: { token, user }, message: 'Berhasil masuk.' });
 }
 
-async function logout(req, res) {
-  // Stateless (JWT) — tidak ada sesi server-side untuk di-invalidate, port logout()
-  // Laravel secara fungsional (client cukup buang token-nya sendiri).
+// jti+exp dari token yang sedang dipakai (diisi requireStudent) diblokir di sini —
+// setelah ini token yang sama akan ditolak requireStudent walau belum kedaluwarsa.
+function invalidateSession(req, res) {
+  tokenBlocklist.block(req.student.jti, req.student.exp);
   ApiResponse.success(res, { message: 'Berhasil keluar.' });
+}
+
+async function logout(req, res) {
+  invalidateSession(req, res);
 }
 
 async function resetPassword(req, res) {
   // Port bug apa adanya: AuthController::resetPassword() Laravel isinya IDENTIK dengan
   // logout() — TIDAK benar-benar mereset password apa pun, tidak baca input sama sekali.
-  ApiResponse.success(res, { message: 'Berhasil keluar.' });
+  invalidateSession(req, res);
 }
 
 module.exports = { login, logout, resetPassword };

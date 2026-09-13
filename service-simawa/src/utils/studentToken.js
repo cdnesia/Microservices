@@ -5,6 +5,7 @@
 // (setara sesi `Auth::login($user)` di Laravel, tapi service ini API JSON stateless jadi
 // dipakai JWT sendiri, dikirim di header `X-Student-Token`).
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 const SECRET = process.env.STUDENT_JWT_SECRET;
 if (!SECRET) {
@@ -15,7 +16,9 @@ if (!SECRET) {
 const TTL_SECONDS = Number(process.env.STUDENT_JWT_TTL_SECONDS) || 2 * 60 * 60;
 
 function sign(user) {
-  return jwt.sign({ npm: user.npm, name: user.name, email: user.email }, SECRET, {
+  // jti unik per token — dipakai tokenBlocklist.js supaya logout() bisa menonaktifkan
+  // token spesifik ini saja (bukan semua token milik mahasiswa yang sama).
+  return jwt.sign({ npm: user.npm, name: user.name, email: user.email, jti: crypto.randomUUID() }, SECRET, {
     expiresIn: TTL_SECONDS,
   });
 }
