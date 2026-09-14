@@ -159,7 +159,7 @@ async function dataProdi(kodeProdi) {
   const pool = getPool('SIADE');
   const [rows] = await pool.query(
     `SELECT ps.kode_program_studi AS kodeProgramStudi, ps.nama_program_studi_idn AS namaProgramStudi,
-            ps.fakultas_id AS idFakultas, f.nama_fakultas_idn AS namaFakultas
+            ps.fakultas_id AS idFakultas, f.nama_fakultas_idn AS namaFakultas, f.dekan_id AS dekanId
      FROM master_program_studi ps
      LEFT JOIN master_fakultas f ON f.id = ps.fakultas_id
      WHERE ps.kode_program_studi = ?
@@ -180,11 +180,11 @@ async function dataKelas(id) {
 }
 
 // Setara DataService::saya($npm) — profil lengkap mahasiswa dipakai luas (form
-// pendaftaran KKN/PKL/dst, cetak KHS/KRS). Field `nidn_dekan`/`nama_dekan`/`id_pa`/
-// `dosen_pa`/`nidn_pa` di Laravel ikut dikembalikan tapi kolom sumbernya (dekan di
-// master_program_studi, id_pa di master_mahasiswa) tidak ikut terbaca dalam ekstraksi
-// spek — dicoba best-effort di bawah (dibungkus try/catch supaya tidak menjatuhkan
-// seluruh saya() kalau nama kolomnya ternyata beda di skema produksi asli).
+// pendaftaran KKN/PKL/dst, cetak KHS/KRS). Field `nidn_pa`/`dosen_pa` (PA di
+// master_mahasiswa) masih best-effort di bawah (dibungkus try/catch supaya tidak
+// menjatuhkan seluruh saya() kalau nama kolomnya ternyata beda di skema produksi asli).
+// `nidn_dekan`/`nama_dekan` sudah dipastikan lewat `f.dekan_id` (master_fakultas, lihat
+// dataProdi() di atas) — sempat bug hilang karena kolom itu tidak ikut di-SELECT.
 async function saya(npm) {
   const mhs = await getMahasiswaByNpm(npm);
   if (!mhs) return null;
