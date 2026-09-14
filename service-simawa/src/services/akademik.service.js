@@ -180,11 +180,7 @@ async function dataKelas(id) {
 }
 
 // Setara DataService::saya($npm) — profil lengkap mahasiswa dipakai luas (form
-// pendaftaran KKN/PKL/dst, cetak KHS/KRS). Field `nidn_pa`/`dosen_pa` (PA di
-// master_mahasiswa) masih best-effort di bawah (dibungkus try/catch supaya tidak
-// menjatuhkan seluruh saya() kalau nama kolomnya ternyata beda di skema produksi asli).
-// `nidn_dekan`/`nama_dekan` sudah dipastikan lewat `f.dekan_id` (master_fakultas, lihat
-// dataProdi() di atas) — sempat bug hilang karena kolom itu tidak ikut di-SELECT.
+// pendaftaran KKN/PKL/dst, cetak KHS/KRS).
 async function saya(npm) {
   const mhs = await getMahasiswaByNpm(npm);
   if (!mhs) return null;
@@ -194,13 +190,19 @@ async function saya(npm) {
 
   let dosenPa = null;
   let nidnPa = null;
-  let idPa = mhs.id_pa ?? null;
+  // Kolom PA di master_mahasiswa bernama `pa_id` (lihat DataService::saya() Laravel:
+  // `$q->pa_id`) — SEBELUMNYA salah baca `mhs.id_pa` (kolom itu tidak ada), jadi lookup
+  // dosen PA tidak pernah jalan dan nama/NIDN pembimbing akademik selalu kosong di cetak KRS.
+  let idPa = mhs.pa_id ?? null;
   if (idPa) {
     try {
       const pegawai = await findPegawaiById(idPa);
       if (pegawai) {
         dosenPa = pegawai.nama_lengkap || null;
-        nidnPa = pegawai.nidn || null;
+        // Port apa adanya DataService.php: kalau NIDN kosong, fallback ke NIK — cuma
+        // berlaku untuk PA, nidn_dekan tidak punya fallback ini di Laravel asli.
+        const nidnTrimmed = (pegawai.nidn || '').trim();
+        nidnPa = nidnTrimmed || pegawai.nik || null;
       }
     } catch {
       // Kolom/lookup PA tidak tersedia — biarkan null, jangan jatuhkan saya().

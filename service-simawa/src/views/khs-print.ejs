@@ -102,11 +102,12 @@
         </tr>
         <tr>
             <!--
-              Port bug apa adanya dari resources/views/khs/print.blade.php SIMAWA asli:
-              baris NIDN di bawah nama Dekan menampilkan nidn_pa (Pembimbing Akademik),
-              BUKAN nidn_dekan — salah-tempel di source Laravel, bukan typo di sini.
+              Laravel asli (khs/print.blade.php) salah-tempel nidn_pa di sini alih-alih
+              nidn_dekan — sengaja TIDAK diikuti di sini atas permintaan eksplisit: NIDN
+              yang ditampilkan di bawah nama Dekan harus NIDN Dekan, bukan NIDN Pembimbing
+              Akademik.
             -->
-            <td style="text-align:center;">NIDN: <%= saya.nidn_pa %></td>
+            <td style="text-align:center;">NIDN: <%= saya.nidn_dekan %></td>
             <td style="text-align:center;">NPM: <%= saya.npm %></td>
         </tr>
     </table>
