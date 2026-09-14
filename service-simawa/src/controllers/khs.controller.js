@@ -73,10 +73,8 @@ async function print(req, res) {
   const pdfBuffer = await renderHtmlToPdf(html);
 
   const safeNpm = String(npm).replace(/[^a-zA-Z0-9_-]/g, '') || 'npm';
-  // Port bug apa adanya: nama file pakai prefix "KRS-" (bukan "KHS-") — sama seperti
-  // KhsController::print() Laravel, kemungkinan copy-paste dari KrsController.
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="KRS-${safeNpm}-${periode}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="KHS-${safeNpm}-${periode}.pdf"`);
   res.send(pdfBuffer);
 }
 
