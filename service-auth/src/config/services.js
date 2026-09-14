@@ -39,9 +39,12 @@ module.exports = [
     baseUrl: process.env.SERVICE_TELEGRAM_URL || 'http://service-telegram:5000',
     gatewayPrefix: '/api/v1',
   },
-  {
-    name: 'service-simawa',
-    baseUrl: process.env.SERVICE_SIMAWA_URL || 'http://service-simawa:5000',
-    gatewayPrefix: '/api/v1',
-  },
+  // service-simawa SENGAJA TIDAK didaftarkan di sini — router-nya (traefik/dynamic/routers.yml)
+  // tidak lagi lewat auth-scope/forwardAuth (lihat simawa-chain di middlewares.yml: React SPA
+  // publik, tidak ada model client_credentials untuk service ini). Kalau tetap didaftarkan,
+  // discoverScopes() bakal terus upsert scope simawa:* ke tabel `scopes` dan memunculkannya di
+  // checklist manage-client.sh seolah-olah bisa di-grant/di-enforce ke client — padahal
+  // resolveRequiredScope() untuk path /api/v1/simawa/* itu tidak pernah dipanggil sama sekali
+  // (tidak ada forwardAuth ke /verify di depan service ini), jadi scope itu cuma pajangan yang
+  // menyesatkan operator.
 ];

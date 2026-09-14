@@ -1,9 +1,8 @@
-// Token identitas MAHASISWA (bukan client gateway) — lapis auth KEDUA, terpisah dari
-// Bearer token client (JWT service-auth, dicek Traefik forwardAuth SEBELUM request
-// sampai ke service ini). Gateway memastikan APLIKASI mana yang boleh memanggil
-// service-simawa; token ini memastikan MAHASISWA mana yang sedang login di aplikasi itu
-// (setara sesi `Auth::login($user)` di Laravel, tapi service ini API JSON stateless jadi
-// dipakai JWT sendiri, dikirim di header `X-Student-Token`).
+// Token identitas MAHASISWA — satu-satunya lapis auth di service-simawa (beda dari 7 service
+// bisnis lain yang punya lapis client_id/auth-scope Traefik di depannya; service ini diakses
+// langsung React SPA publik, lihat catatan di src/index.js). Token ini memastikan MAHASISWA
+// mana yang sedang login (setara sesi `Auth::login($user)` di Laravel, tapi service ini API
+// JSON stateless jadi dipakai JWT sendiri, dikirim di header `X-Student-Token`).
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 

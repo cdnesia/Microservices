@@ -108,6 +108,40 @@ http:
         prefixes:
           - "/api/v1"
 
+    # CORS untuk service-simawa SAJA — satu-satunya service yang diakses langsung dari
+    # browser (React SPA), 7 service bisnis lain tetap server-to-server (client_credentials,
+    # tidak butuh CORS). accessControlAllowCredentials sengaja false — token (X-Student-Token)
+    # dikirim lewat header custom, bukan cookie, jadi CORS credentials mode tidak relevan.
+    cors-simawa:
+      headers:
+        accessControlAllowOriginList:
+          - "https://simawa.umjambi.ac.id"
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "Authorization"
+          - "Content-Type"
+          - "X-Student-Token"
+        accessControlAllowCredentials: false
+        accessControlMaxAge: 86400
+        addVaryHeader: true
+
+    # Rate-limit KHUSUS /simawa/auth/login — lebih ketat dari rate-limit-ip biasa (50 avg/100
+    # burst). service-simawa tidak pakai auth-scope/client_id (lihat simawa-chain di bawah),
+    # jadi login adalah satu-satunya endpoint tanpa lapis auth apa pun sebelum requireStudent —
+    # rawan brute-force password mahasiswa kalau dibiarkan selonggar rate-limit-ip.
+    rate-limit-login:
+      rateLimit:
+        average: 5
+        burst: 10
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
     # Proteksi dashboard Traefik (router terpisah di routers.yml, Host-based di subdomain
     # sendiri supaya tidak bentrok dengan PathPrefix(/api/*) punya service bisnis). Password
     # di-generate random sekali, di-hash MD5/apr1 (`htpasswd -nbm`) — SENGAJA bukan bcrypt
@@ -128,6 +162,33 @@ http:
           - secure-headers
           - auth-scope
           - rate-limit-client
+          - strip-api-prefix
+
+    # service-simawa TIDAK lewat auth-scope/rate-limit-client — konsumennya React SPA publik
+    # (public client OAuth2, tidak bisa aman menyimpan client_secret di browser), jadi tidak
+    # pakai model client_credentials sama sekali. Satu-satunya lapis auth adalah login
+    # mahasiswa (JWT X-Student-Token, dicek per-route oleh requireStudent di service-simawa
+    # sendiri — lihat src/middleware/requireStudent.js). cors-simawa WAJIB sebelum posisi
+    # auth-scope biasanya berada, supaya preflight OPTIONS (browser tidak kirim header auth
+    # apa pun saat preflight) langsung dijawab Traefik, bukan diteruskan ke backend.
+    simawa-chain:
+      chain:
+        middlewares:
+          - cloudflare-ips
+          - rate-limit-ip
+          - secure-headers
+          - cors-simawa
+          - strip-api-prefix
+
+    # Sama seperti simawa-chain, tapi rate-limit-login menggantikan rate-limit-ip untuk
+    # endpoint /simawa/auth/login secara spesifik (lihat rate-limit-login di atas).
+    simawa-login-chain:
+      chain:
+        middlewares:
+          - cloudflare-ips
+          - rate-limit-login
+          - secure-headers
+          - cors-simawa
           - strip-api-prefix
 
     # Rewrite "/api/v1/<service>/health" -> "/health" supaya backend tetap terima path polos

@@ -44,20 +44,18 @@ app.get('/scopes', (req, res) => {
   res.json({ service: 'service-simawa', routes: simawaRoutes.scopes });
 });
 
-// Defense in depth: tolak request yang tidak lewat gateway (tidak ada X-Client-Id dari
-// service-auth). Scope-check sesungguhnya sudah dilakukan di Traefik/service-auth.
-app.use((req, res, next) => {
-  if (!req.headers['x-client-id']) {
-    return ApiResponse.error(res, { message: 'Request harus lewat API gateway', statusCode: 403 });
-  }
-  next();
-});
+// Tidak ada guard X-Client-Id di sini (beda dari 7 service bisnis lain) — service ini
+// diakses langsung oleh React SPA publik lewat gateway, bukan client_credentials
+// server-to-server, jadi tidak ada X-Client-Id yang akan pernah terkirim. Satu-satunya lapis
+// auth adalah login mahasiswa (X-Student-Token, lihat requireStudent di bawah). Traefik tetap
+// membatasi origin (CORS) dan rate-limit di depan — lihat simawa-chain/simawa-login-chain di
+// traefik/dynamic/middlewares.yml.
 
 // Semua route bisnis di-mount di bawah /simawa (dipertahankan sebagai namespace domain,
 // konsisten dengan pola service lain di project ini — mis. service-ruangan punya route
-// '/ruangan/list', bukan '/list' polos). Lapis auth kedua (identitas mahasiswa,
-// X-Student-Token) diterapkan per-route di dalam masing-masing file src/routes/*.routes.js
-// lewat middleware/requireStudent.js.
+// '/ruangan/list', bukan '/list' polos). Lapis auth (identitas mahasiswa, X-Student-Token)
+// diterapkan per-route di dalam masing-masing file src/routes/*.routes.js lewat
+// middleware/requireStudent.js.
 app.use('/simawa', simawaRoutes.router);
 
 app.use((req, res) => ApiResponse.error(res, { message: 'Route tidak ditemukan.', statusCode: 404 }));

@@ -116,6 +116,19 @@ http:
         - health-chain
       service: service-simawa
 
+    # Path exact-match, lebih spesifik dari PathPrefix(/api/v1/simawa) di bawah, jadi
+    # otomatis diprioritaskan Traefik (rule-specificity) tanpa perlu "priority:" eksplisit —
+    # pola yang sama seperti router *-health. Rate-limit lebih ketat (simawa-login-chain)
+    # karena endpoint ini tanpa client_id/auth-scope sama sekali (lihat middlewares.yml).
+    service-simawa-login:
+      rule: "Path(`/api/v1/simawa/auth/login`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      middlewares:
+        - simawa-login-chain
+      service: service-simawa
+
     service-ruangan:
       rule: "PathPrefix(`/api/v1/ruangan`)"
       entryPoints:
@@ -179,13 +192,15 @@ http:
         - gateway-chain
       service: service-telegram
 
+    # Tidak pakai gateway-chain (auth-scope/client_id) — lihat catatan simawa-chain di
+    # middlewares.yml: React SPA public client, satu-satunya auth adalah login mahasiswa.
     service-simawa:
       rule: "PathPrefix(`/api/v1/simawa`)"
       entryPoints:
         - websecure
       tls: {}
       middlewares:
-        - gateway-chain
+        - simawa-chain
       service: service-simawa
 
   services:

@@ -2,10 +2,10 @@ const ApiResponse = require('../utils/ApiResponse');
 const studentToken = require('../utils/studentToken');
 const tokenBlocklist = require('../utils/tokenBlocklist');
 
-// Lapis auth KEDUA — identitas MAHASISWA, terpisah dari X-Client-Id (identitas
-// APLIKASI/client gateway, dicek sekali di src/index.js sebelum router domain manapun
-// dipasang). Lihat komentar lengkap di src/utils/studentToken.js untuk kenapa dua lapis
-// ini dipisah (client gateway vs mahasiswa yang sedang login).
+// Satu-satunya lapis auth di service ini — identitas MAHASISWA (X-Student-Token). Berbeda
+// dari 7 service bisnis lain, service-simawa TIDAK punya lapis client_id/auth-scope di
+// depannya (lihat src/index.js) karena konsumennya React SPA publik, bukan client_credentials
+// server-to-server. Lihat komentar lengkap di src/utils/studentToken.js.
 function requireStudent(req, res, next) {
   const token = req.headers['x-student-token'];
   if (!token) {
