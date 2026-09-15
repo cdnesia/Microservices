@@ -7,11 +7,17 @@ async function beranda(req, res) {
   const npm = req.student.npm;
   const krsData = await akademik.krs(npm);
 
+  // Laravel asli (HomeController::index()) menghitung $ipk[] di loop yang sama tapi TIDAK
+  // PERNAH menaruhnya ke $d['ipk'] (cuma $d['labels']/$d['ips'] yang dikirim ke view) — dead
+  // code, bukan disengaja. Di sini SENGAJA disertakan (menyimpang dari "port apa adanya")
+  // atas permintaan eksplisit: FE butuh grafik IPK per semester di halaman Beranda.
   const labels = [];
   const ips = [];
+  const ipk = [];
   Object.values(krsData).forEach((item) => {
     labels.push(`Semester ${item.semester}`);
     ips.push(item.metadata.ips);
+    ipk.push(item.metadata.ipk);
   });
 
   const mhs = await akademik.getMahasiswaAktifOrThrow(npm);
@@ -31,7 +37,7 @@ async function beranda(req, res) {
   // diambil ulang di sini terlepas dari cabang di atas (port apa adanya).
   const ambilTagihan = await tagihanService.cekTagihan({ npm: [npm] });
 
-  const data = { labels, ips };
+  const data = { labels, ips, ipk, beasiswa: cekBeasiswa };
   if (!cekBeasiswa) {
     data.tagihan_sekarang = ambilTagihan;
   }
