@@ -30,7 +30,9 @@ async function renderHtmlToPdf(html, pdfOptions = {}) {
   try {
     await page.setContent(html, { waitUntil: 'networkidle0' });
     return await page.pdf({
-      format: 'a4',
+      // F4/Folio (215mm x 330mm) — A4 terlalu kecil untuk cetak KHS.
+      width: '215mm',
+      height: '330mm',
       printBackground: true,
       margin: { top: '1cm', bottom: '1cm', left: '1.5cm', right: '1.5cm' },
       ...pdfOptions,
