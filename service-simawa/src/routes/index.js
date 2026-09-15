@@ -17,6 +17,7 @@ const domains = [
   require('./pendaftaranSeminar.routes'),
   require('./pendaftaranSidang.routes'),
   require('./riwayatPembayaran.routes'),
+  require('./beasiswa.routes'),
   require('./wisuda.routes'),
   require('./edom.routes'),
 ];
