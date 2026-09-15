@@ -10,6 +10,7 @@ async function findPersyaratan({ tipe, kelasPerkuliahanId, kodeProdi, tahunAngka
   const pool = getPool('SIADE');
   const [rows] = await pool.query(
     `SELECT id, nama_kegiatan AS namaKegiatan, minimal_sks AS minimalSks,
+            minimal_semester AS minimalSemester,
             maksimal_nilai_d AS maksimalNilaiD, biaya_pendaftaran AS biayaPendaftaran,
             id_bipot AS idBipot
      FROM tbl_kegiatan_mahasiswa
@@ -26,6 +27,7 @@ async function findById(id) {
   const pool = getPool('SIADE');
   const [rows] = await pool.query(
     `SELECT id, nama_kegiatan AS namaKegiatan, minimal_sks AS minimalSks,
+            minimal_semester AS minimalSemester,
             maksimal_nilai_d AS maksimalNilaiD, biaya_pendaftaran AS biayaPendaftaran,
             id_bipot AS idBipot
      FROM tbl_kegiatan_mahasiswa WHERE id = ? LIMIT 1`,
