@@ -7,7 +7,7 @@ const { parseOrThrow } = require('../utils/validate');
 const { renderHtmlToPdf } = require('../utils/pdf');
 const { periodeQuerySchema } = require('../utils/schemas');
 const { PERIODE_REGEX } = require('../utils/constants');
-const { getLogoDataUri, tahunAkademikLabel, tanggalHariIni } = require('../utils/pdfLabels');
+const { getLogoDataUri, tahunAkademikLabel, fakultasFontSize, tanggalHariIni } = require('../utils/pdfLabels');
 const { tryDecryptId } = require('../utils/cryptoId');
 const akademik = require('../services/akademik.service');
 const krsService = require('../services/krs.service');
@@ -119,6 +119,7 @@ async function print(req, res) {
     periode,
     krs: krsForPdf,
     tahunAkademikLabel: tahunAkademikLabel(periode),
+    fakultasFontSize: fakultasFontSize(saya.nama_fakultas),
     logoDataUri: getLogoDataUri(),
     tanggal: tanggalHariIni(),
   });
