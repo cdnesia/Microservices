@@ -9,6 +9,7 @@ const akademik = require('../services/akademik.service');
 const kegiatanService = require('../services/kegiatanMahasiswa.service');
 const simakuService = require('../services/simaku.service');
 const { ringkasanKrsUntukPendaftaran, sudahKontrakTipe } = require('../services/pendaftaran.service');
+const { TIPE_MATA_KULIAH_DIKECUALIKAN_NILAI_D } = require('../utils/constants');
 
 async function index(req, res) {
   // Port bug apa adanya: index KKN Laravel filter tipe IN ('KKN','PKL') — jadi
@@ -28,7 +29,9 @@ async function create(req, res) {
     kodeProdi: mhs.kode_program_studi,
     tahunAngkatan: mhs.tahun_angkatan,
   });
-  const { totalSks, jumlahD, jumlahKosong } = await ringkasanKrsUntukPendaftaran(npm, tahunAktif);
+  const { totalSks, jumlahD, jumlahKosong } = await ringkasanKrsUntukPendaftaran(npm, tahunAktif, {
+    kecualikanTipeUntukNilaiD: TIPE_MATA_KULIAH_DIKECUALIKAN_NILAI_D,
+  });
 
   ApiResponse.success(res, {
     data: {
@@ -55,7 +58,9 @@ async function store(req, res) {
     return ApiResponse.error(res, { statusCode: 422, message: 'Gagal mendaftar karena belum kontrak Matakuliah KKN.' });
   }
 
-  const { totalSks, jumlahD, jumlahKosong } = await ringkasanKrsUntukPendaftaran(npm, tahunAktif);
+  const { totalSks, jumlahD, jumlahKosong } = await ringkasanKrsUntukPendaftaran(npm, tahunAktif, {
+    kecualikanTipeUntukNilaiD: TIPE_MATA_KULIAH_DIKECUALIKAN_NILAI_D,
+  });
   // store() KKN menghitung nilai D TERMASUK 'E' (beda dari create()) — port apa adanya.
   const jumlahDE = jumlahD + jumlahKosong;
 

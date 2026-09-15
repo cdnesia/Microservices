@@ -10,10 +10,9 @@ const akademik = require('../services/akademik.service');
 const kegiatanService = require('../services/kegiatanMahasiswa.service');
 const tagihanService = require('../services/tagihan.service');
 const { ringkasanKrsUntukPendaftaran, sudahKontrakTipe } = require('../services/pendaftaran.service');
+const { TIPE_MATA_KULIAH_DIKECUALIKAN_NILAI_D } = require('../utils/constants');
 
 const EXCLUDE_FAKULTAS = [2];
-// KKN, Skripsi, Seminar Proposal — dikecualikan dari hitungan nilai D (lihat spek).
-const TIPE_DIKECUALIKAN_NILAI_D = [1, 3, 4];
 
 async function index(req, res) {
   const rows = await kegiatanService.findTugasAkhir(req.student.npm);
@@ -37,7 +36,7 @@ async function create(req, res) {
     : await sudahKontrakTipe(npm, 2);
 
   const { totalSks, jumlahD, jumlahKosong } = await ringkasanKrsUntukPendaftaran(npm, tahunAktif, {
-    kecualikanTipeUntukNilaiD: TIPE_DIKECUALIKAN_NILAI_D,
+    kecualikanTipeUntukNilaiD: TIPE_MATA_KULIAH_DIKECUALIKAN_NILAI_D,
   });
 
   ApiResponse.success(res, {
@@ -71,7 +70,7 @@ async function store(req, res) {
   }
 
   const { totalSks, jumlahD, jumlahKosong } = await ringkasanKrsUntukPendaftaran(npm, tahunAktif, {
-    kecualikanTipeUntukNilaiD: TIPE_DIKECUALIKAN_NILAI_D,
+    kecualikanTipeUntukNilaiD: TIPE_MATA_KULIAH_DIKECUALIKAN_NILAI_D,
   });
 
   const id = tryDecryptId(encryptedId);
