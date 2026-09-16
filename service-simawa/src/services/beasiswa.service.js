@@ -21,4 +21,20 @@ async function findRiwayatBeasiswa(npm) {
   return rows;
 }
 
-module.exports = { findRiwayatBeasiswa };
+// Nama beasiswa untuk tahun akademik AKTIF saja — dipakai halaman Beranda (home.controller.js)
+// supaya badge "Penerima Beasiswa" bisa menampilkan namanya, bukan cuma flag boolean seperti
+// akademik.service.js:cekBeasiswa (yang dipertahankan apa adanya untuk gerbang KRS/tagihan).
+async function findNamaBeasiswaAktif(npm, tahunAkademik) {
+  const pool = getPool('SIADE');
+  const [rows] = await pool.query(
+    `SELECT lb.nama_beasiswa
+     FROM tbl_penerima_beasiswa pb
+     LEFT JOIN master_lembaga_beasiswa lb ON lb.id = pb.id_lembaga
+     WHERE pb.npm = ? AND JSON_CONTAINS(pb.tahun_akademik, JSON_QUOTE(?))
+     LIMIT 1`,
+    [npm, String(tahunAkademik)]
+  );
+  return rows[0]?.nama_beasiswa || null;
+}
+
+module.exports = { findRiwayatBeasiswa, findNamaBeasiswaAktif };

@@ -2,6 +2,7 @@
 const ApiResponse = require('../utils/ApiResponse');
 const akademik = require('../services/akademik.service');
 const tagihanService = require('../services/tagihan.service');
+const beasiswaService = require('../services/beasiswa.service');
 
 async function beranda(req, res) {
   const npm = req.student.npm;
@@ -23,6 +24,10 @@ async function beranda(req, res) {
   const mhs = await akademik.getMahasiswaAktifOrThrow(npm);
   const tahunAktif = await akademik.tahunAkademikAktif(mhs.kode_program_studi);
   const cekBeasiswa = await akademik.cekBeasiswa(npm, tahunAktif);
+  // Nama beasiswa (bukan cuma flag boolean cekBeasiswa di atas, yang dipertahankan apa
+  // adanya untuk gerbang tagihan) — cuma di-query kalau memang penerima, atas permintaan
+  // eksplisit halaman Beranda menampilkan nama beasiswanya.
+  const namaBeasiswa = cekBeasiswa ? await beasiswaService.findNamaBeasiswaAktif(npm, tahunAktif) : null;
 
   // Setara PaymentService::cekTagihanSekarang() + generateTagihanSekarang() — kalau
   // tagihan SPP periode aktif belum ada, coba generate (best-effort, kegagalan
@@ -37,7 +42,7 @@ async function beranda(req, res) {
   // diambil ulang di sini terlepas dari cabang di atas (port apa adanya).
   const ambilTagihan = await tagihanService.cekTagihan({ npm: [npm] });
 
-  const data = { labels, ips, ipk, beasiswa: cekBeasiswa };
+  const data = { labels, ips, ipk, beasiswa: cekBeasiswa, nama_beasiswa: namaBeasiswa };
   if (!cekBeasiswa) {
     data.tagihan_sekarang = ambilTagihan;
   }
