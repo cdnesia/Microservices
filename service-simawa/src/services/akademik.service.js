@@ -385,13 +385,14 @@ async function jadwalKuliah(kodeProdi, kelasPerkuliahanId, tahunAkademik) {
        j.jam_selesai AS jamSelesai, j.ruang_id AS ruangId, j.dosen_id AS dosenId,
        h.nama_hari AS namaHari,
        mk.id AS mataKuliahId, mk.kode_mata_kuliah AS kodeMataKuliah,
-       mk.nama_mata_kuliah_idn AS namaMataKuliah, mk.sks_mata_kuliah AS sksMataKuliah
+       mk.nama_mata_kuliah_idn AS namaMataKuliah, mk.sks_mata_kuliah AS sksMataKuliah,
+       mk.semester AS semester
      FROM tbl_jadwal_perkuliahan j
      LEFT JOIN master_hari h ON h.id = j.hari_id
      LEFT JOIN master_kurikulum_matakuliah mk ON mk.id = j.mata_kuliah_id
      WHERE j.tahun_akademik = ? AND j.kode_program_studi = ? AND j.program_kuliah_id = ?
        AND j.status = 'A'
-     ORDER BY h.id, j.jam_mulai`,
+     ORDER BY mk.semester, h.id, j.jam_mulai`,
     [tahunAkademik, kodeProdi, kelasPerkuliahanId]
   );
 
@@ -413,6 +414,7 @@ async function jadwalKuliah(kodeProdi, kelasPerkuliahanId, tahunAkademik) {
       kode: r.kodeMataKuliah || '',
       nama: r.namaMataKuliah || '',
       sks: r.sksMataKuliah || 0,
+      semester: r.semester ?? null,
     },
   }));
 }
