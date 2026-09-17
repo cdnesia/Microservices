@@ -42,10 +42,14 @@ async function beranda(req, res) {
   // diambil ulang di sini terlepas dari cabang di atas (port apa adanya).
   const ambilTagihan = await tagihanService.cekTagihan({ npm: [npm] });
 
+  // Laravel asli (HomeController::index()) TIDAK PERNAH menyembunyikan tagihan dari
+  // penerima beasiswa — $d['tagihan_sekarang'] selalu diisi ambilTagihan() tanpa syarat.
+  // Di sini sengaja menyimpang: SPP sudah dicover beasiswa jadi tidak perlu ditagih lagi,
+  // tapi jenis tagihan lain (mis. jaket almamater, dll.) tetap harus tampil & dibayar.
   const data = { labels, ips, ipk, beasiswa: cekBeasiswa, nama_beasiswa: namaBeasiswa };
-  if (!cekBeasiswa) {
-    data.tagihan_sekarang = ambilTagihan;
-  }
+  data.tagihan_sekarang = cekBeasiswa
+    ? ambilTagihan.filter((item) => item.jenis_tagihan !== 'SPP')
+    : ambilTagihan;
   ApiResponse.success(res, { data, message: 'Berhasil mengambil data beranda.' });
 }
 
